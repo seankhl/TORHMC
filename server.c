@@ -43,9 +43,21 @@ int main(int argc, char *argv[])
                  &clilen);
      if (newsockfd < 0) 
           error("ERROR on accept");
+
+     // Connection has been established, wait for onion
+
      bzero(buffer,256);
      n = read(newsockfd,buffer,255);
      if (n < 0) error("ERROR reading from socket");
+
+     // Buffer now contains onion, decrypt with private key,
+     // store symmetric key, and establish connection with
+     // next node as client to relay payload
+
+     private_decrypt(&buffer);
+
+     // Fork and set up connection as client?
+
      printf("Here is the message: %s\n",buffer);
      n = write(newsockfd,"I got your message",18);
      if (n < 0) error("ERROR writing to socket");
