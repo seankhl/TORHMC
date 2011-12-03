@@ -51,7 +51,7 @@ unsigned char *aes_encrypt(EVP_CIPHER_CTX *en_ctx,
 {
     int outlen = *len + AES_BLOCK_SIZE;
     int finlen = 0;
-    unsigned char *ctext = (unsigned char *)malloc(outlen);
+    unsigned char *ctext = (unsigned char *)OPENSSL_malloc(outlen);
 
     EVP_EncryptUpdate(en_ctx, ctext, &outlen, ptext, *len);
     EVP_EncryptFinal_ex(en_ctx, ctext+outlen, &finlen);
@@ -67,7 +67,7 @@ unsigned char *aes_decrypt(EVP_CIPHER_CTX *de_ctx,
     int outlen = *len;
     int finlen = 0;
   
-    unsigned char *ptext = (unsigned char *)malloc(outlen);
+    unsigned char *ptext = (unsigned char *)OPENSSL_malloc(outlen);
 
     EVP_DecryptUpdate(de_ctx, ptext, &outlen, ctext, *len);        
     EVP_DecryptFinal_ex(de_ctx, ptext+outlen, &finlen);
@@ -108,7 +108,7 @@ int main(int argc, char **argv)
     unsigned char *ctext = aes_encrypt(&en_ctx, msg,   &len);
     unsigned char *ptext = aes_decrypt(&de_ctx, ctext, &len);
 
-    string msgstr((char *)msg, 1024);
+    string msgstr((char *)msg, len);
 
     if (memcmp(msg, ptext, len)) {
         printf("FAIL: enc/dec failed for \"%s\"\n", msgstr.c_str());
