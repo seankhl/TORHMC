@@ -1,0 +1,54 @@
+
+
+\title{Onion Routing}
+\author{
+        Chris Beavers \& Sean Laguna \\ Department of Computer Science \\ Harvey Mudd College \\ CS 181 Final Project
+}
+\date{December 7th, 2011}
+
+\documentclass[12pt]{article}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Onion Routing is a method of anonymizing one's web activity by routing all traffic through an encrypted, random path through a network of ``nodes.'' It was developed as an idea in the late 90s\cite{gold}, and today has gained popularization through the Tor project, whose extensive documentation is available online\cite{tor}. In this paper, we explore the difficulties in implementing an onion routing network, and explore possible security risks with Tor's current model. We conclude by presenting a more secure method of authenticating identity on sites hidden within the network.
+\end{abstract}
+
+\section{Implementing Tor}
+Our basic approach to constructing an Onion Router stemmed from a description of Tor put forward by Hooks and Miles\cite{hook}. After discussing a plan of attack, we opted to divide the work between us so that Sean worked on encryption while Chris investigated how C sockets and setting up basic connectivity between machines in the network. Consequently, Sean explored a myriad of different encryption algorithms discussed in class and implemented in the OpenSSL library, while Chris began to grapple with sockets in C to establish paths on the fly through the network. Both avenues had significant learning curves, but the final code is available via a git repository at {\tt https://github.com/seanlaguna/TORHMC}.
+
+\paragraph{Current Functionality}
+Currently, our implementation has three different operators: clients, nodes, and designated exit nodes. A client begins by selecting a random set of available nodes and their corresponding RSA public keys from a comprehensive list of nodes on the network. The client then constructs an initiation onion, encrypted with all public keys in the order opposite of the intended path. This onion is relayed to the first node in the path, who notes a new socket connection, accepts, and then receives a buffer which it decrypts with its private key.
+
+The header of the unencrypted buffer contains information for where the next node in the path is, and how to connect to it. In addition, it contains a pre-established symmetric key for this node to use in decrypting future messages. This node then sets up a socket connection with the next and relays the remainder of the encrypted onion.
+
+This process continues until an exit node is reached, which decrypts its onion to accept a symmetric key and nothing more. The path is then set up for symmetric relaying, and the client may put in web addresses to quickly and anonymously ping. 
+
+\paragraph{Unimplemented Features}
+As is apparent from the description above, our implementation does not attempt to acquire all outgoing internet traffic to route through the network. Conversations with our CS professors revealed this to be far out of the scope of our project, requiring the client node to somehow monitor at a very low level all system activity, construct an effective packeting scheme of this activity to feed it through the onion network, and the ability of the exit node to emulate an ethernet connection of sorts once all is said and done. To pursue this, we might have investigated how VPN services work, but it would essentially require writing such a service on top of our work presented above. A dissertation maybe, but not a final project.
+
+\section{Improving Tor}
+A major problem challenging Tor today is the ease with which phishing sites may be anonymously established to emulate other hidden Tor sites. Internal Tor URLs consist of large strings of random characters that it is nearly impossible to remember or verify onsite. Consequently, by creating a look-alike login and posting it on the internet for possible Tor explorers to see reveals a large base of people uncertain if they're logging into the correct service or not.
+
+While phishing is essentially impossible to avoid on first visit to a site (as one is unfamiliar with the site and must of course set up an account before using it, etc.), return visitors should have some form of method for verifying the site's authenticity. To this end, we take a page from the bank's playbook, and propose that some form of verifying signature be established on first visit that can be reused on return visits. Keeping this interaction anonymous is, of course, the trick, as most such identifying features used by banks rely on IP address on information about the client.
+
+Simple enough, a Diffie-Hellman handshake could take place between client and server, wherein a symmetric key is securely established through the network path. When a user then revisits the site,
+
+\section{Conclusions}
+Doing this is smart because duh.
+
+\bibliographystyle{plain}
+
+\begin{thebibliography}{1}
+
+  \bibitem{gold} Goldschlag, David, Michael Reed, and Paul Syverson. ``Onion Routing: for Anonymous and Private Internet Connections." {\it Communications of the ACM} 42.2 (1999). PDF.
+  
+  \bibitem{tor} {\it Tor Project}: Anonymity Online. Web. 03 Dec. 2011. $<${\tt http://www.torproject.org}$>$.
+
+  \bibitem{hook}  Hooks, Matt, and Jadrian Miles. ``Onion Routing and Online Anonymity." (2006). {\it Duke University}. Web.
+
+  \end{thebibliography}
+
+
+\end{document}

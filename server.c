@@ -68,7 +68,7 @@ int main(int argc, char *argv[])
 void dostuff (int sock)
 {
     int n;
-    char buffer[256];  
+    unsigned char buffer[256];  
 
     while (1) {
         bzero(buffer,256);

@@ -12,7 +12,7 @@
 #include <sys/types.h> 
 #include <sys/socket.h>
 #include <netinet/in.h>
-#include <netdb.h> 
+#include <netdb.h>
 
 void newpath(int); /* Function to handle new connection through this node */
 
@@ -66,6 +66,26 @@ int main(int argc, char *argv[])
      return 0;
 }
 
+int ipToInt(char * ip)
+{
+    int a, b, c, d;
+    sscanf(ip, "%u.%u.%u.%u", &a, &b, &c, &d);
+    return ((a & 0xFF) << 24) + ((b & 0xFF) << 16) + ((c & 0xFF) << 8) + (d & 0xFF);
+}
+
+char * intToIp(int i)
+{
+    static char ip[128];
+
+    int a, b, c, d;
+    a = (i >> 24) & 0xFF;
+    b = (i >> 16) & 0xFF;
+    c = (i >> 8) & 0xFF;
+    d = i & 0xFF;
+    sprintf(ip, "%u.%u.%u.%u", a, b, c, d);
+    return ip;
+}
+
 /* newpath(int prev) -
    This function handles the creation of a new path through this node. Its input
    represents the socket connection leading 'into' this node along the path, and it
@@ -77,38 +97,38 @@ int main(int argc, char *argv[])
 */
 void newpath (int prev)
 {
-    int n;
+    int n, next;
+    short portno;
     char buffer[256];
+    struct sockaddr_in serv_addr;
+    struct hostent *server;
     
     bzero(buffer,256);
-    n = read(prev,buffer,255);
+    n = read(prev,buffer,256);
     if (n < 0) error("ERROR reading from socket");
 
     // private_decrypt(&buffer);
 
-    // Set up outgoing socket
-    int next, portno;
-    struct sockaddr_in serv_addr;
-    struct hostent *server;
-
-    char serv[9] = "localhost";
-
-    portno = atoi("51718");
     next = socket(AF_INET, SOCK_STREAM, 0);
     if (next < 0) 
         error("ERROR opening socket");
-    server = gethostbyname(serv);
-    if (server == NULL) {
-        fprintf(stderr,"ERROR, no such host\n");
-        exit(0);
-    }
+
     bzero((char *) &serv_addr, sizeof(serv_addr));
     serv_addr.sin_family = AF_INET;
+
+    int ipint;
+    memcpy((char *) &ipint, buffer, 4);
+    char * ip = intToIp(ipint);
+
+    server = gethostbyname(ip);
     bcopy((char *)server->h_addr, 
          (char *)&serv_addr.sin_addr.s_addr,
          server->h_length);
-    serv_addr.sin_port = htons(portno);
-    if (connect(next,(struct sockaddr *) &serv_addr,sizeof(serv_addr)) < 0) 
+
+    //printf("Port number: %d", portno);
+    serv_addr.sin_port = htons(51718);
+
+    if (connect(next,(struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0) 
         error("ERROR connecting");
 
     // Pass on buffer to next to continue symmetric key setup

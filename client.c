@@ -5,12 +5,32 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
-#include <netdb.h> 
+#include <netdb.h>
 
 void error(const char *msg)
 {
     perror(msg);
     exit(0);
+}
+
+int ipToInt(char * ip)
+{
+    int a, b, c, d;
+    sscanf(ip, "%u.%u.%u.%u", &a, &b, &c, &d);
+    return ((a & 0xFF) << 24) + ((b & 0xFF) << 16) + ((c & 0xFF) << 8) + (d & 0xFF);
+}
+
+char * intToIp(int i)
+{
+    static char ip[128];
+
+    int a, b, c, d;
+    a = (i >> 24) & 0xFF;
+    b = (i >> 16) & 0xFF;
+    c = (i >> 8) & 0xFF;
+    d = i & 0xFF;
+    sprintf(ip, "%u.%u.%u.%u", a, b, c, d);
+    return ip;
 }
 
 int main(int argc, char *argv[])
@@ -42,18 +62,26 @@ int main(int argc, char *argv[])
     if (connect(sockfd,(struct sockaddr *) &serv_addr,sizeof(serv_addr)) < 0) 
         error("ERROR connecting");
 
+    int ipint;
+    bzero(buffer,256);
+
+    ipint = ipToInt("127.0.0.1");
+    memcpy(buffer, (char *) &ipint, 4);
+
+    short port = 51718;
+    //memcpy(buffer + 4, (char *) &port, sizeof(short));
+
+    n = write(sockfd,buffer,256);
+    if (n < 0) 
+         error("ERROR writing to socket");
+
 while (1) {
-    printf("Please enter the message: ");
+    printf("Who do you want to ping? ");
     bzero(buffer,256);
     fgets(buffer,255,stdin);
     n = write(sockfd,buffer,strlen(buffer));
     if (n < 0) 
          error("ERROR writing to socket");
-    //bzero(buffer,256);
-    //n = read(sockfd,buffer,255);
-    //if (n < 0) 
-    //     error("ERROR reading from socket");
-    //printf("%s\n",buffer);
 }
     close(sockfd);
     return 0;
