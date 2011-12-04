@@ -129,16 +129,15 @@ void newpath (int prev)
 
     memcpy((char *) &portno, buffer + 4, 2);
     printf("port: %d\n", portno);
-
-    memmove(buffer + layerSize, buffer, bufferSize - layerSize);
-
     serv_addr.sin_port = htons(portno);
 
     if (connect(next,(struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0) 
         error("ERROR connecting");
 
+    memmove(buffer, buffer + layerSize, bufferSize - layerSize);
+
     // Pass on buffer to next to continue symmetric key setup
-    n = write(next,buffer,strlen(buffer));
+    n = write(next,buffer,256);
     if (n < 0) 
         error("ERROR writing to socket");
 

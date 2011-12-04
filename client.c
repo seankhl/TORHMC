@@ -71,12 +71,12 @@ int main(int argc, char *argv[])
 
     bzero(buffer,256);
 
-    int numNodes = 1;
+    int numNodes = 2;
     int layerSize = sizeof(int)+sizeof(short);
 
     printf("Randomly selecting path...");
-    char* ips[1]   = {"127.0.0.1"};
-    short ports[1] = {51718};
+    char* ips[2]   = {"127.0.0.1", "127.0.0.1"};
+    short ports[2] = {51716,51718};
     printf("DONE!\n");
 
     printf("Creating onion...");
