@@ -98,8 +98,10 @@ char * intToIp(int i)
 void newpath (int prev)
 {
     int n, next;
-    short portno;
-    char buffer[256];
+    unsigned short portno = 0;
+    int bufferSize = 256;
+    char buffer[bufferSize];
+    int layerSize = sizeof(int) + sizeof(short);
     struct sockaddr_in serv_addr;
     struct hostent *server;
     
@@ -125,8 +127,12 @@ void newpath (int prev)
          (char *)&serv_addr.sin_addr.s_addr,
          server->h_length);
 
-    //printf("Port number: %d", portno);
-    serv_addr.sin_port = htons(51718);
+    memcpy((char *) &portno, buffer + 4, 2);
+    printf("port: %d\n", portno);
+
+    memmove(buffer + layerSize, buffer, bufferSize - layerSize);
+
+    serv_addr.sin_port = htons(portno);
 
     if (connect(next,(struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0) 
         error("ERROR connecting");
@@ -151,7 +157,7 @@ void newpath (int prev)
             printf("Node received from next: %s\n",buffer);
 
             // Relay to prev
-            n = write(prev,"I talked to next",16);
+            n = write(prev,buffer,255);
             if (n < 0) error("ERROR writing to socket");
         }
 	else {
@@ -160,7 +166,7 @@ void newpath (int prev)
             n = read(prev,buffer,255);
             if (n < 0) 
                 error("ERROR reading from socket");
-            printf("Node received from prev: %s\n",buffer);
+            printf("Relaying ping request for: %s\n",buffer);
 
             // Relay to next
             n = write(next,buffer,strlen(buffer));
