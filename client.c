@@ -1,3 +1,10 @@
+/*
+   CS 181a Final Project - Onion Router Client
+   Chris Beavers and Sean Laguna
+   Based on C sockets tutorial code from
+   http://www.linuxhowtos.org/C_C++/socket.htm
+*/
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -62,27 +69,48 @@ int main(int argc, char *argv[])
     if (connect(sockfd,(struct sockaddr *) &serv_addr,sizeof(serv_addr)) < 0) 
         error("ERROR connecting");
 
-    int ipint;
     bzero(buffer,256);
 
-    ipint = ipToInt("127.0.0.1");
-    memcpy(buffer, (char *) &ipint, 4);
+    int numNodes = 2;
+    int layerSize = sizeof(int)+sizeof(short);
 
-    short port = 51718;
-    //memcpy(buffer + 4, (char *) &port, sizeof(short));
+    printf("Randomly selecting path...");
+    char* ips[2]   = {"127.0.0.1", "127.0.0.1"};
+    short ports[2] = {51716,51718};
+    printf("DONE!\n");
+
+    printf("Creating onion...");
+
+    int i=0;
+    for(i=0; i < numNodes; i++)
+    {
+        int ipint = ipToInt(ips[i]);
+        short portshort = ports[i];
+        memcpy(buffer + i*layerSize, (char *) &ipint, sizeof(int));
+        memcpy(buffer + i*layerSize + sizeof(int), (char *) &portshort, sizeof(short));
+    }
+    printf("DONE!\nEstablishing symmetric encryption through the path...");
 
     n = write(sockfd,buffer,256);
     if (n < 0) 
          error("ERROR writing to socket");
 
-while (1) {
-    printf("Who do you want to ping? ");
-    bzero(buffer,256);
-    fgets(buffer,255,stdin);
-    n = write(sockfd,buffer,strlen(buffer));
-    if (n < 0) 
-         error("ERROR writing to socket");
-}
+    bzero(buffer, 256);
+    n = read(sockfd,buffer,256);
+    printf("DONE!\nResponse from exit node: %s\nAnonymous network connection established. ", buffer);
+
+    while (1) {
+        printf("Who do you want to ping? ");
+        bzero(buffer,256);
+        fgets(buffer,255,stdin);
+        n = write(sockfd,buffer,strlen(buffer));
+        if (n < 0) 
+             error("ERROR writing to socket");
+        bzero(buffer,256);
+        n = read(sockfd,buffer,255);
+        if (n < 0) error("ERROR reading from socket");
+        printf("Response from server: %s\n", buffer);
+    }
     close(sockfd);
     return 0;
 }

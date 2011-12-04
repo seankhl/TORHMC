@@ -1,8 +1,10 @@
-/* A simple server in the internet domain using TCP
-   The port number is passed as an argument 
-   This version runs forever, forking off a separate 
-   process for each connection
+/*
+   CS 181a Final Project - Onion Router Server
+   Chris Beavers and Sean Laguna
+   Based on C sockets tutorial code from
+   http://www.linuxhowtos.org/C_C++/socket.htm
 */
+
 #include <stdio.h>
 #include <unistd.h>
 #include <stdlib.h>
@@ -68,14 +70,25 @@ int main(int argc, char *argv[])
 void dostuff (int sock)
 {
     int n;
-    unsigned char buffer[256];  
+    unsigned char buffer[256];
+
+    bzero(buffer,256);
+    n = read(sock,buffer,255);
+    if (n < 0) error("ERROR reading from socket");
+    n = system("ping -c 1 google.com");
+    if (n < 0) error("ERROR pinging google.com");
+    else write(sock,"Successfully established path.",30);  
 
     while (1) {
+        char command[256];
         bzero(buffer,256);
+        bzero(command,256);
         n = read(sock,buffer,255);
         if (n < 0) error("ERROR reading from socket");
-        printf("Here is the message: %s\n",buffer);
-        //n = write(sock,"I got your message",18);
-        //if (n < 0) error("ERROR writing to socket");
+        n = sprintf(command, "ping -c 1 %s", buffer);
+        system(command);
+        bzero(buffer,256);
+        if (n < 0) write(sock, "Server unavailable.", 19);
+        else write(sock,"Ping successful.",16);
     }
 }
