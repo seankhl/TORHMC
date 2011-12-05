@@ -1,29 +1,29 @@
-#include <stdlib.h>
-#include <iostream>
-#include <cstring>
-#include <string>
-#include <sys/time.h>
-
-#include <openssl/evp.h>
-#include <openssl/rand.h>
+#include "aes.h"
 
 using namespace std;
 
-int aes_init(EVP_CIPHER_CTX *en_ctx, EVP_CIPHER_CTX *de_ctx)
+aes_data aes_create()
 {
     // generate a random 32-byte password
     unsigned char password[32];
     RAND_bytes(password, 32);
-
-    // we temporarily need aes_key and aes_iv
-    unsigned char aes_key[32], aes_iv[32];
+    
+    // we pass data via an aes_data struct
+    aes_data data;
     
     int z = EVP_BytesToKey(
                 EVP_aes_256_cbc(), EVP_sha1(),  // 256-bit cbc; sha1 
                 NULL,                           // salt
-                password, 32,                    // password for generation
+                password, 32,                   // password for generation
                 8,                              // num rounds
-                aes_key, aes_iv);               // return buffers
+                data.aes_key, data.aes_iv);     // return buffers
+    
+    return data;
+}
+
+int aes_init(EVP_CIPHER_CTX *en_ctx, EVP_CIPHER_CTX *de_ctx)
+{
+    aes_data data = aes_create();
     
     // en_ctx stores the encryption key/iv
     EVP_CIPHER_CTX_init(en_ctx);
@@ -31,7 +31,7 @@ int aes_init(EVP_CIPHER_CTX *en_ctx, EVP_CIPHER_CTX *de_ctx)
     EVP_EncryptInit_ex(en_ctx, 
                        EVP_aes_256_cbc(), 
                        NULL, 
-                       aes_key, aes_iv);
+                       data.aes_key, data.aes_iv);
 
     // de_ctx stores the decryption key/iv
     EVP_CIPHER_CTX_init(de_ctx);
@@ -39,12 +39,10 @@ int aes_init(EVP_CIPHER_CTX *en_ctx, EVP_CIPHER_CTX *de_ctx)
     EVP_DecryptInit_ex(de_ctx, 
                        EVP_aes_256_cbc(), 
                        NULL, 
-                       aes_key, aes_iv);
+                       data.aes_key, data.aes_iv);
                        
-  return 0;
+    return 0;
 }
-
-#define AES_BLOCK_SIZE 128
 
 unsigned char *aes_encrypt(EVP_CIPHER_CTX *en_ctx,
                            unsigned char *ptext, int *len)
@@ -92,6 +90,11 @@ unsigned char *randstr(unsigned char *str, int len, bool newseed=false)
 
 int main(int argc, char **argv)
 {
+    aes_data data = aes_create();
+    cerr << sizeof(aes_data) << endl;
+    return 1;
+}
+/*
     EVP_CIPHER_CTX en_ctx;    
     EVP_CIPHER_CTX de_ctx;
 
@@ -123,6 +126,7 @@ int main(int argc, char **argv)
     
     free(ctext);
     free(ptext);
-     
+
     return 0;
 }
+*/
