@@ -70,24 +70,23 @@ int main(int argc, char *argv[])
 void dostuff (int sock)
 {
     int n;
-    unsigned char buffer[256];
+    int bufferSize = 512;
+    unsigned char buffer[bufferSize];
 
-    bzero(buffer,256);
-    n = read(sock,buffer,255);
+    bzero(buffer,bufferSize);
+    n = read(sock,buffer,bufferSize);
     if (n < 0) error("ERROR reading from socket");
-    n = system("ping -c 1 google.com");
-    if (n < 0) error("ERROR pinging google.com");
     else write(sock,"Successfully established path.",30);  
 
     while (1) {
-        char command[256];
-        bzero(buffer,256);
-        bzero(command,256);
-        n = read(sock,buffer,255);
+        char command[bufferSize];
+        bzero(buffer,bufferSize);
+        bzero(command,bufferSize);
+        n = read(sock,buffer,bufferSize);
         if (n < 0) error("ERROR reading from socket");
         n = sprintf(command, "ping -c 1 %s", buffer);
         system(command);
-        bzero(buffer,256);
+        bzero(buffer,bufferSize);
         if (n < 0) write(sock, "Server unavailable.", 19);
         else write(sock,"Ping successful.",16);
     }
