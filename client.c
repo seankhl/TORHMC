@@ -127,19 +127,19 @@ unsigned char *randstr(unsigned char *str, int len, bool newseed=false)
 /* RSA functions                                               */
 /////////////////////////////////////////////////////////////////
 
-int write_pubkey(RSA *key, string filepath)
+int write_pubkey(RSA *key, char *filepath)
 {
-    BIO *pubkey_bio = BIO_new_file(filepath.c_str(), "w");
+    BIO *pubkey_bio = BIO_new_file(filepath, "w");
     BIO_set_mem_eof_return(pubkey_bio, 0);
     PEM_write_bio_RSAPublicKey(pubkey_bio, key);
     BIO_free(pubkey_bio);
-    return 1;
+    return 0;
 }
 
-EVP_PKEY *read_pubkey(string filepath)
+EVP_PKEY *read_pubkey(char *filepath)
 {
     RSA *pubkey = RSA_new();
-    BIO *pubkey_bio = BIO_new_file(filepath.c_str(), "r");
+    BIO *pubkey_bio = BIO_new_file(filepath, "r");
     PEM_read_bio_RSAPublicKey(pubkey_bio, &pubkey, 0, NULL);
     BIO_free(pubkey_bio);
     
@@ -148,19 +148,19 @@ EVP_PKEY *read_pubkey(string filepath)
     return pubkey_evp;
 }
 
-int write_privkey(RSA *key, string filepath)
+int write_privkey(RSA *key, char *filepath)
 {
-    BIO *privkey_bio = BIO_new_file(filepath.c_str(), "w");
+    BIO *privkey_bio = BIO_new_file(filepath, "w");
     BIO_set_mem_eof_return(privkey_bio, 0);
     PEM_write_bio_RSAPrivateKey(privkey_bio, key, NULL, NULL, 0, 0, NULL);
     BIO_free(privkey_bio);
-    return 1;
+    return 0;
 }
 
-EVP_PKEY *read_privkey(string filepath)
+EVP_PKEY *read_privkey(char *filepath)
 {
     RSA *privkey = RSA_new();
-    BIO *privkey_bio = BIO_new_file(filepath.c_str(), "r");
+    BIO *privkey_bio = BIO_new_file(filepath, "r");
     PEM_read_bio_RSAPrivateKey(privkey_bio, &privkey, 0, NULL);
     BIO_free(privkey_bio);
     
@@ -249,14 +249,14 @@ void error(const char *msg)
     exit(0);
 }
 
-int ipToInt(char * ip)
+int ipToInt(char *ip)
 {
     int a, b, c, d;
     sscanf(ip, "%u.%u.%u.%u", &a, &b, &c, &d);
     return ((a & 0xFF) << 24) + ((b & 0xFF) << 16) + ((c & 0xFF) << 8) + (d & 0xFF);
 }
 
-char * intToIp(int i)
+char *intToIp(int i)
 {
     static char ip[128];
 
@@ -271,124 +271,184 @@ char * intToIp(int i)
 
 int main(int argc, char *argv[])
 {
+    // sockets
     int sockfd, portno, n;
     struct sockaddr_in serv_addr;
     struct hostent *server;
 
-    int bufferSize = 512;
-    int numNodes = 2;
-    int layerSize = 128;
-    unsigned char buffer[bufferSize];
+    // some consts for us
+    const int bufferSize = 512;
+    const int numNodes = 2;
+    const int layerSize = 128;
+    
+    // args check
     if (argc < 3) {
        fprintf(stderr,"usage: %s hostname port\n", argv[0]);
        exit(0);
     }
+    
+    // get portno
     portno = atoi(argv[2]);
+    
+    // get socket
     sockfd = socket(AF_INET, SOCK_STREAM, 0);
-    if (sockfd < 0) 
+    if (sockfd < 0) {
         error("ERROR opening socket");
+    }
+    
+    // get server
     server = gethostbyname(argv[1]);
     if (server == NULL) {
         fprintf(stderr,"ERROR, no such host\n");
         exit(0);
     }
-    bzero((char *) &serv_addr, sizeof(serv_addr));
+    
+    // set up sockets structs
+    bzero((char *)&serv_addr, sizeof(serv_addr));
     serv_addr.sin_family = AF_INET;
     bcopy((char *)server->h_addr, 
-         (char *)&serv_addr.sin_addr.s_addr,
-         server->h_length);
+          (char *)&serv_addr.sin_addr.s_addr,
+          server->h_length);
     serv_addr.sin_port = htons(portno);
-    if (connect(sockfd,(struct sockaddr *) &serv_addr,sizeof(serv_addr)) < 0) 
+    
+    // connect to server
+    if (connect(sockfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
         error("ERROR connecting");
+    }
 
-    bzero(buffer,bufferSize);
+    // our buffer
+    unsigned char buffer[bufferSize];
+    bzero(buffer, bufferSize);
 
     printf("Randomly selecting path...");
-    char* ips[2]       = {"127.0.0.1", "127.0.0.1"};
-    string keypaths[2] = {"keys/pubkey2.pem","keys/pubkey2.pem"};
-    short ports[2]     = {51716,51718};
+    
+    // SIMPLFICIATION: path isn't "truly" random
+    char *ips[2]      = {"127.0.0.1", "127.0.0.1"};
+    char *keypaths[2] = {"keys/pubkey2.pem", "keys/pubkey2.pem"};
+    short ports[2]    = {51716, 51718};
 
-    // Set up symmetric keys and encryption/decryption contexts
-    aes_data symmkeys[numNodes];
-    EVP_CIPHER_CTX en_ctx[numNodes];
-    EVP_CIPHER_CTX de_ctx[numNodes];
-    for(size_t j=0; j < numNodes; j++)
-    {
-        symmkeys[j] = aes_create();
-        if (aes_init(&(en_ctx[j]), &(de_ctx[j]), symmkeys[j])) {
+    // set up symmetric keys and encryption/decryption contexts
+    aes_data symkeys[numNodes];
+    EVP_CIPHER_CTX en_sym[numNodes];
+    EVP_CIPHER_CTX de_sym[numNodes];
+    
+    int i = 0;
+    for(i = 0; i < numNodes; i++) {
+        symkeys[i] = aes_create();
+        if (aes_init(&(en_sym[i]), &(de_sym[i]), symkeys[i])) {
             printf("Couldn't initialize AES System\n");
-            return 1;
+            exit(0);
         }
     }
+    
     printf("DONE!\n");
-
     printf("Creating onion...");
 
-    int i=0;
-    for(i=numNodes - 1; i >= 0; i--)
-    {
+    // go in REVERSE order so we can encrypt naturally
+    for (i = numNodes - 1; i >= 0; i--) {
+        // set up the layer
         unsigned char layer[layerSize];
         bzero(layer, layerSize);
 
+        // get the IP number, port, and symmetric key for this layer
         int ipint = ipToInt(ips[i]);
         short portshort = ports[i];
+        aes_data symkey = symkeys[i];
 
-        memcpy(layer, (char *) &ipint, sizeof(int));
-        memcpy(layer + sizeof(int), (char *) &portshort, sizeof(short));
-        memcpy(layer + sizeof(int) + sizeof(short), (char *) &symmkeys[i], sizeof(aes_data));
-
-        EVP_PKEY* pub = read_pubkey(keypaths[i]);
-        EVP_PKEY_CTX *en_ctx;
+        // copy them into the layer
+        memcpy(layer,                               (char *)&ipint,     sizeof(int));
+        memcpy(layer + sizeof(int),                 (char *)&portshort, sizeof(short));
+        memcpy(layer + sizeof(int) + sizeof(short), (char *)&symkey,    sizeof(aes_data));
+        
+        // set up RSA engine
         ENGINE *e = ENGINE_get_default_RSA();
         ENGINE_init(e);
+        
+        // read in the public key and set up a context with it
+        EVP_PKEY *pub = read_pubkey(keypaths[i]);
+        EVP_PKEY_CTX *en_ctx;
         en_ctx = EVP_PKEY_CTX_new(pub, e);
+        
+        // our layers have an 86-byte plantext maximum for a 128-byte encrypted size
         size_t len = 86;
-        unsigned char * ctext = rsa_encrypt(en_ctx, layer, len);
-        if(len == layerSize)
+        
+        // encrypt the layer; modifies len to be length of ctext
+        unsigned char *ctext = rsa_encrypt(en_ctx, layer, len);
+        
+        if (len == layerSize) {
+            // if it worked, copy into the buffer
             memcpy(buffer + i*layerSize, ctext, layerSize);
-        else
+        }
+        else {
             printf("everything is fucked!: %d\n", len);
+            exit(0);
+        }
+        
+        // free the context for the next one
+        EVP_PKEY_CTX_free(en_ctx);
     }
+    
     printf("DONE!\nEstablishing symmetric encryption through the path...");
+    printf("message: %s\n\n", (char *)buffer);
+    
+    // write out the buffer to the next node so it can get its stuff
+    n = write(sockfd, buffer, bufferSize);
+    if (n < 0) {
+        error("ERROR writing to socket");
+    }
 
-    printf("message: %s\n\n", buffer);
-    n = write(sockfd,buffer,bufferSize);
-    if (n < 0) 
-         error("ERROR writing to socket");
-
+    // zero out our buffer so we can start passing messages
     bzero(buffer, bufferSize);
-    n = read(sockfd,buffer,bufferSize);
+    
+    // get a response
+    n = read(sockfd, buffer, bufferSize);
+
     printf("DONE!\nResponse from exit node: %s\nAnonymous network connection established. ", buffer);
 
+    // infinite loop for pinging sites
     while (1) {
         printf("Who do you want to ping? ");
+        // construct our message
         unsigned char message[bufferSize];
-        bzero((char *) message,bufferSize);
-        fgets((char *) message,255,stdin);
+        bzero(message, bufferSize);
+        
+        // ask for a site from stdin
+        fgets((char *)message, 255, stdin);
 
-        // Encrypt buffer with symmetric keys - NOTE: adds ~16 bytes per layer
-        int len = strlen((char *) message);
-        for(i=numNodes - 1; i >= 0; i--)
-        {
-            printf("About to encrypt %d bytes: %s\n", len, (char *) message);
-            unsigned char * ctext = aes_encrypt(&(en_ctx[i]), message, &len);
+        // encrypt buffer with symmetric keys in FORWARD order
+        // NOTE: adds ~16 bytes per layer
+        int len = strlen((char *)message);
+        for (i = numNodes - 1; i >= 0; i--) {
+            // encrypt message
+            printf("About to encrypt %d bytes: %s\n", len, (char *)message);
+            unsigned char *ctext = aes_encrypt(&(en_sym[i]), message, &len);
+            
+            // copy message from ctext back to message so we can keep going
             memcpy(message, ctext, len);
-            printf("message size: %d...%s\n", len, (char *) message);
+            printf("message size: %d...%s\n", len, (char *)message);
         }
 
-        // Relay down the path
+        // relay down the path
         n = write(sockfd,message,len);
-        if (n < 0) 
+        if (n < 0) {
              error("ERROR writing to socket");
-        bzero(buffer,bufferSize);
+        }
+        
+        // zero out the buffer (we just sent it)
+        bzero(message, bufferSize);
 
-        // Wait for response
-        n = read(sockfd,buffer,bufferSize);
-
-        // Decrypt buffer with symmetric keys in reverse order
-        if (n < 0) error("ERROR reading from socket");
-        printf("Response from server: %s\n", buffer);
+        // wait for response
+        n = read(sockfd, message, bufferSize);
+        if (n < 0) {
+            error("ERROR reading from socket");
+        }
+        
+        // decrypt buffer with symmetric keys in reverse order
+        
+        printf("Response from server: %s\n", (char *)message);
     }
+    
+    // done, close socket
     close(sockfd);
     return 0;
 }

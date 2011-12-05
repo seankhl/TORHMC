@@ -27,7 +27,6 @@
 
 using namespace std;
 
-
 /////////////////////////////////////////////////////////////////
 /* AES functions                                               */
 /////////////////////////////////////////////////////////////////
@@ -253,46 +252,60 @@ void error(const char *msg)
 
 int main(int argc, char *argv[])
 {
-     int sockfd, newsockfd, portno, pid;
-     socklen_t clilen;
-     struct sockaddr_in serv_addr, cli_addr;
-
-     if (argc < 2) {
-         fprintf(stderr,"ERROR, no port provided\n");
-         exit(1);
-     }
-     sockfd = socket(AF_INET, SOCK_STREAM, 0);
-     if (sockfd < 0) 
+    // sockets
+    int sockfd, newsockfd, portno, pid;
+    socklen_t clilen;
+    struct sockaddr_in serv_addr, cli_addr;
+    
+    // args check
+    if (argc < 2) {
+        fprintf(stderr,"ERROR, no port provided\n");
+        exit(1);
+    }
+    
+    // set up connection
+    sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    if (sockfd < 0) {
         error("ERROR opening socket");
-     bzero((char *) &serv_addr, sizeof(serv_addr));
-     portno = atoi(argv[1]);
-     serv_addr.sin_family = AF_INET;
-     serv_addr.sin_addr.s_addr = INADDR_ANY;
-     serv_addr.sin_port = htons(portno);
-     if (bind(sockfd, (struct sockaddr *) &serv_addr,
-              sizeof(serv_addr)) < 0) 
-              error("ERROR on binding");
-     listen(sockfd,5);
-     clilen = sizeof(cli_addr);
+    }
+        
+    bzero((char *) &serv_addr, sizeof(serv_addr));
+    portno = atoi(argv[1]);
+    serv_addr.sin_family = AF_INET;
+    serv_addr.sin_addr.s_addr = INADDR_ANY;
+    serv_addr.sin_port = htons(portno);
+    if (bind(sockfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
+        error("ERROR on binding");
+    }
+    
+    listen(sockfd,5);
+    clilen = sizeof(cli_addr);
 
-     while (1) { // Loop indefinitely, spawning new processes to handle each path
-         newsockfd = accept(sockfd, 
-               (struct sockaddr *) &cli_addr, &clilen);
-         if (newsockfd < 0) 
-             error("ERROR on accept");
-
-         pid = fork(); // Note: we are not dealing with zombies
-         if (pid < 0)
-             error("ERROR on fork");
-         if (pid == 0)  {
-             close(sockfd);
-             newpath(newsockfd); // Handle new connection in new process
-             exit(0);
-         }
-         else close(newsockfd);
-     }
-     close(sockfd);
-     return 0;
+    // loop indefinitely, spawning new processes to handle each path
+    while (1) { 
+        newsockfd = accept(sockfd, (struct sockaddr *)&cli_addr, &clilen);
+        if (newsockfd < 0) {
+            error("ERROR on accept");
+        }
+        
+        // NOTE: we are not dealing with zombies
+        pid = fork();
+        if (pid < 0) {
+            error("ERROR on fork");
+        }
+        
+        if (pid == 0) {
+            close(sockfd);
+            // handle new connection in new process
+            newpath(newsockfd);
+            exit(0);
+        }
+        else {
+            close(newsockfd);
+        }
+    }
+    close(sockfd);
+    return 0;
 }
 
 int ipToInt(char * ip)
@@ -302,7 +315,7 @@ int ipToInt(char * ip)
     return ((a & 0xFF) << 24) + ((b & 0xFF) << 16) + ((c & 0xFF) << 8) + (d & 0xFF);
 }
 
-char * intToIp(int i)
+char *intToIp(int i)
 {
     static char ip[128];
 
@@ -324,120 +337,145 @@ char * intToIp(int i)
    the address of where to set up the outgoing connection, the symmetric key to use in
    this connection going forward, and the (still encrypted) payload to relay there.
 */
-void newpath (int prev)
+void newpath(int prev)
 {
-    int n, next;
-    unsigned short portno = 0;
-    int bufferSize = 512;
-    int layerSize = 128;
-    unsigned char buffer[bufferSize];
+    // some vars
+    int n, next, pid;
+    short portno = 0;
     struct sockaddr_in serv_addr;
     struct hostent *server;
     
-    bzero(buffer,bufferSize);
-    n = read(prev,buffer,bufferSize);
-    if (n < 0) error("ERROR reading from socket");
+    // some consts for us
+    int bufferSize = 512;
+    int layerSize = 128;
+    
+    // set up the buffer
+    unsigned char buffer[bufferSize];
+    bzero(buffer, bufferSize);
+    n = read(prev, buffer, bufferSize);
+    if (n < 0) {
+        error("ERROR reading from socket");
+    }
+    
+    // get the socket to the next node
+    next = socket(AF_INET, SOCK_STREAM, 0);
+    if (next < 0) {
+        error("ERROR opening socket");
+    }
+    bzero((char *)&serv_addr, sizeof(serv_addr));
+    serv_addr.sin_family = AF_INET;
 
-    // Read in our layer
+    // read in our layer
     unsigned char layer[layerSize];
     bzero(layer, layerSize);
     memcpy(layer, buffer, layerSize);
 
-    // Now decrypt our layer with our private key
-    EVP_PKEY *priv = read_privkey("privkey.pem");
-    EVP_PKEY_CTX *de_ctx;
+    /* now decrypt our layer with our private key */
+    
+    // set up engine
     ENGINE *f = ENGINE_get_default_RSA();
     ENGINE_init(f);
+
+    // read in the private key and set up a context with it
+    EVP_PKEY *priv = read_privkey("privkey.pem");
+    EVP_PKEY_CTX *de_ctx;
     de_ctx = EVP_PKEY_CTX_new(priv, f);
 
+    // perform decryption
     size_t len = layerSize;
     unsigned char *ptext = rsa_decrypt(de_ctx, layer, len);
 
-    next = socket(AF_INET, SOCK_STREAM, 0);
-    if (next < 0) 
-        error("ERROR opening socket");
-
-    bzero((char *) &serv_addr, sizeof(serv_addr));
-    serv_addr.sin_family = AF_INET;
-
-    // Extract our IP for the next node connection
+    // extract our IP for the next node connection
     int ipint;
-    memcpy((char *) &ipint, ptext, 4);
-    char * ip = intToIp(ipint);
+    memcpy((char *)&ipint, ptext, sizeof(int));
+    char *ip = intToIp(ipint);
     server = gethostbyname(ip);
     bcopy((char *)server->h_addr, 
-         (char *)&serv_addr.sin_addr.s_addr,
-         server->h_length);
+          (char *)&serv_addr.sin_addr.s_addr,
+          server->h_length);
 
-    // Extract our port for next node connection
-    memcpy((char *) &portno, ptext + 4, 2);
-    printf("port: %d\n", portno);
+    // extract our port for next node connection
+    memcpy((char *)&portno, ptext + sizeof(int), sizeof(short));
+    printf("port: %u\n", portno);
     serv_addr.sin_port = htons(portno);
 
-    // Extract our AES symmetric encryption struct
-    aes_data symmkey;
-    bzero((char *) &symmkey, sizeof(aes_data));
-    memcpy((char *) &symmkey, buffer + 6, sizeof(aes_data));
+    // extract our AES symmetric encryption struct
+    aes_data symkey;
+    bzero((char *)&symkey, sizeof(aes_data));
+    memcpy((char *)&symkey, ptext + sizeof(int) + sizeof(short), sizeof(aes_data));
+    
+    printf("\n%s\n", (char *)symkey.aes_key);
+    
+    // create encryption and decryption contexts
     EVP_CIPHER_CTX en_sym;
     EVP_CIPHER_CTX de_sym;
-    if (aes_init(&en_sym, &de_sym, symmkey)) {
-        error("Couldn't initialize AES System\n");
+    if (aes_init(&en_sym, &de_sym, symkey)) {
+        error("Couldn't initialize AES contexts\n");
     }
 
-    // Connect to next node
-    if (connect(next,(struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0) 
+    // connect to next node
+    if (connect(next, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
         error("ERROR connecting");
+    }
 
-    // Shift off used layer to relay rest of onion
+    // shift off used layer to relay rest of onion
     memmove(buffer, buffer + layerSize, bufferSize - layerSize);
 
-    // Pass on buffer to next to continue symmetric key setup
-    n = write(next,buffer,bufferSize);
-    if (n < 0) 
+    // pass on buffer to next to continue symmetric key setup
+    n = write(next, buffer, bufferSize);
+    if (n < 0) {
         error("ERROR writing to socket");
-
-    // Fork process to handle concurrent reading from both prev and next
-    int pid = fork();
-    if (pid < 0)
-         error("ERROR on fork");
-
-    // Now that symmetric keys have been established, we simply listen on
-    // both ends of the connection and encrypt or decrypt and relay as
-    // appropriate
+    }
+    
+    // fork process to handle concurrent reading from both prev and next
+    pid = fork();
+    if (pid < 0) {
+        error("ERROR on fork");
+    }
+    
+    // now that symmetric keys have been established, we simply listen on both
+    // ends of the connection and encrypt or decrypt and relay as appropriate
+    unsigned char message[bufferSize];
     while (1) {
-        int len = bufferSize;
-	if (pid == 0)  { // Coming back from server
-            // Get response from next
-            bzero(buffer,bufferSize);
-            n = read(next,buffer,bufferSize);
-            if (n < 0) 
+        // coming back from server
+	    if (pid == 0)  {
+            // get response from next
+            bzero(message, bufferSize);
+            n = read(next, message, bufferSize);
+            if (n < 0) {
                 error("ERROR reading from socket");
-            printf("Node received from next: %s\n",buffer);
+            }
+            
+            printf("Message received from next: %s\n", message);
 
-            // Encrypt buffer
-            //unsigned char *ctext = aes_encrypt(&en_sym, buffer, &len);
+            // encrypt buffer
+            //unsigned char *ctext = aes_encrypt(&en_sym, message, &n);
 
-            // Relay to prev
-            n = write(prev,buffer,bufferSize);
-            if (n < 0) error("ERROR writing to socket");
+            // relay to prev
+            //n = write(prev, ctext, bufferSize);
+            if (n < 0) {
+                error("ERROR writing to socket");
+            }
         }
-	else { // Going towards server
-            // Get response from prev
-            unsigned char msg[bufferSize];
-            bzero((char*) msg,bufferSize);
-            n = read(prev,msg,bufferSize);
-
-            if (n < 0) 
+        // going towards server
+	    else {
+            // get response from prev
+            bzero(message, bufferSize);
+            n = read(prev, message, bufferSize);
+            if (n < 0) {
                 error("ERROR reading from socket");
+            }
+            
+            // decrypt buffer
+            printf("About to decrypt %d bytes: %s\n", n, message);
+            unsigned char *ptext = aes_decrypt(&de_sym, message, &n);
+            printf("Relaying ping request of %d bytes: %s\n", n, (char *)ptext);
 
-            // Decrypt buffer
-            printf("About to decrypt %d bytes: %s\n", n, msg);
-            unsigned char *ptext = aes_decrypt(&de_sym, msg, &n);
-            printf("Relaying ping request of %d bytes: %s\n",n, (char *) ptext);
-
-            // Relay to next
-            n = write(next,(char *) ptext,n);
-            if (n < 0) error("ERROR writing to socket");
+            // relay to next
+            n = write(next, ptext, n);
+            if (n < 0) {
+                error("ERROR writing to socket");
+            }
         }
     }
 }
