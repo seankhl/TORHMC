@@ -1,34 +1,20 @@
-#include <stdlib.h>
-#include <iostream>
-#include <cstring>
-#include <string>
-#include <sys/time.h>
-#include <openssl/rsa.h>
-#include <openssl/pem.h>
-#include <openssl/evp.h>
-#include <openssl/engine.h>
-#include <openssl/bn.h>
-// get_iplist()
-// get_pubkey(ISPADDR)
-
-// broadcast_trusted_pubkey()
-
-// random_path()
-
-// create_connection_onion(vector<RSA> path)
-
-// create_lightweight_onion(vector<aes_data> path);
+#include "rsa.h"
 
 using namespace std;
 
-EVP_PKEY *get_pubkey(RSA *key)
+int write_pubkey(RSA *key, string filepath)
 {
-    BIO *pubkey_bio = BIO_new_file("rsa_pubkey_bio.pem", "w");
+    BIO *pubkey_bio = BIO_new_file(filepath.c_str(), "w");
     BIO_set_mem_eof_return(pubkey_bio, 0);
     PEM_write_bio_RSAPublicKey(pubkey_bio, key);
-    RSA *pubkey = RSA_new();
     BIO_free(pubkey_bio);
-    pubkey_bio = BIO_new_file("rsa_pubkey_bio.pem", "r");
+    return 1;
+}
+
+EVP_PKEY *read_pubkey(string filepath)
+{
+    RSA *pubkey = RSA_new();
+    BIO *pubkey_bio = BIO_new_file(filepath.c_str(), "r");
     PEM_read_bio_RSAPublicKey(pubkey_bio, &pubkey, 0, NULL);
     BIO_free(pubkey_bio);
     
@@ -37,15 +23,20 @@ EVP_PKEY *get_pubkey(RSA *key)
     return pubkey_evp;
 }
 
-EVP_PKEY *get_privkey(RSA *key)
+int write_privkey(RSA *key, string filepath)
 {
-    BIO *privkey_bio = BIO_new_file("rsa_privkey_bio.pem", "w");
+    BIO *privkey_bio = BIO_new_file(filepath.c_str(), "w");
     BIO_set_mem_eof_return(privkey_bio, 0);
-    PEM_write_bio_RSAPrivateKey(privkey_bio, key, EVP_aes_128_cbc(), NULL, 0, 0, (void *)"hello");
-    RSA *privkey = RSA_new();
+    PEM_write_bio_RSAPrivateKey(privkey_bio, key, NULL, NULL, 0, 0, NULL);
     BIO_free(privkey_bio);
-    privkey_bio = BIO_new_file("rsa_privkey_bio.pem", "r");
-    PEM_read_bio_RSAPrivateKey(privkey_bio, &privkey, 0, (void *)"hello");
+    return 1;
+}
+
+EVP_PKEY *read_privkey(string filepath)
+{
+    RSA *privkey = RSA_new();
+    BIO *privkey_bio = BIO_new_file(filepath.c_str(), "r");
+    PEM_read_bio_RSAPrivateKey(privkey_bio, &privkey, 0, NULL);
     BIO_free(privkey_bio);
     
     EVP_PKEY *privkey_evp = EVP_PKEY_new();
@@ -58,29 +49,29 @@ unsigned char *rsa_encrypt(EVP_PKEY_CTX *en_ctx,
 {
     // initializie encryption process
     if (EVP_PKEY_encrypt_init(en_ctx) < 1) {
-        printf("FUCK1\n"); return ptext;
+        return NULL;
     }
 
     // padding initialization
     if (EVP_PKEY_CTX_set_rsa_padding(en_ctx, RSA_PKCS1_OAEP_PADDING) < 1) {
-        printf("FUCK2\n"); return ptext;
+        return NULL;
     }
 
     // determine output length
     size_t outlen;
     if (EVP_PKEY_encrypt(en_ctx, NULL, &outlen, ptext, len) < 1) {
-        printf("FUCK3\n"); return ptext;
+        return NULL;
     }
     
     // get out buffer
     unsigned char *ctext = (unsigned char *)OPENSSL_malloc(outlen);
     if (!ctext) {
-        printf("FUCK4\n"); return ptext;
+        return NULL;
     }
 
     // perform encryption
     if (EVP_PKEY_encrypt(en_ctx, ctext, &outlen, ptext, len) < 1) {
-        printf("FUCK5 %d\n", outlen);
+        return NULL;
     }
 
     len = outlen;
@@ -93,29 +84,29 @@ unsigned char *rsa_decrypt(EVP_PKEY_CTX *de_ctx,
 {
     // initialize encryption process
     if (EVP_PKEY_decrypt_init(de_ctx) < 1) {
-        // error
+        return NULL;
     }
 
     // padding initialization
     if (EVP_PKEY_CTX_set_rsa_padding(de_ctx, RSA_PKCS1_OAEP_PADDING) < 1) {
-        // error
+        return NULL;
     }
 
     // determine output length
     size_t outlen;
     if (EVP_PKEY_decrypt(de_ctx, NULL, &outlen, ctext, len) < 1) {
-        // error
+        return NULL;
     }
 
     // get out buffer
     unsigned char *ptext = (unsigned char *)OPENSSL_malloc(outlen);
     if (!ptext) {
-        // error
+        return NULL;
     }
 
     // perform decryption
     if (EVP_PKEY_decrypt(de_ctx, ptext, &outlen, ctext, len) < 1) {
-        printf("FUCK5 %d\n", outlen);
+        return NULL;
     }
 
     len = outlen;
@@ -123,7 +114,7 @@ unsigned char *rsa_decrypt(EVP_PKEY_CTX *de_ctx,
     return ptext;
 }
 
-unsigned char *randstr(unsigned char *str, int len, bool newseed=false)
+unsigned char *randstr(unsigned char *str, int len, bool newseed)
 {
     if (newseed) {
         timeval seed;
@@ -135,7 +126,7 @@ unsigned char *randstr(unsigned char *str, int len, bool newseed=false)
     }
     return str;
 }
-
+/*
 int main(int argc, char **argv)
 {
     OpenSSL_add_all_algorithms();
@@ -149,29 +140,56 @@ int main(int argc, char **argv)
         rsa_rawkey = RSA_generate_key(2048, RSA_F4, NULL, NULL);
         check_key = RSA_check_key(rsa_rawkey);
     }
+    write_pubkey(rsa_rawkey, "pubkey1.pem");
+    write_privkey(rsa_rawkey, "privkey1.pem");
     
-    EVP_PKEY *rsa_pubkey = get_pubkey(rsa_rawkey);
+    RSA *rsa_rawkey2;
+    rsa_rawkey2 = RSA_generate_key(2048, RSA_F4, NULL, NULL);
+    int check_key2 = RSA_check_key(rsa_rawkey2);
+    while (check_key2 <= 0) {
+        rsa_rawkey2 = RSA_generate_key(2048, RSA_F4, NULL, NULL);
+        check_key2 = RSA_check_key(rsa_rawkey2);
+    }
+    write_pubkey(rsa_rawkey2, "pubkey2.pem");
+    write_privkey(rsa_rawkey2, "privkey2.pem");
+}
+*/
+int main(int argc, char **argv)
+{
+    OpenSSL_add_all_algorithms();
+    ENGINE_load_builtin_engines();
+    ENGINE_register_all_complete();
+
+    RSA *rsa_rawkey;
+    rsa_rawkey = RSA_generate_key(1024, RSA_F4, NULL, NULL);
+    int check_key = RSA_check_key(rsa_rawkey);
+    while (check_key <= 0) {
+        rsa_rawkey = RSA_generate_key(1024, RSA_F4, NULL, NULL);
+        check_key = RSA_check_key(rsa_rawkey);
+    }
     
-    //EVP_PKEY *rsa_pubkey = EVP_PKEY_new();
-    //EVP_PKEY_assign_RSA(rsa_pubkey, rsa_rawkey);
+    //EVP_PKEY *rsa_pubkey = get_pubkey(rsa_rawkey);
+    
+    EVP_PKEY *rsa_pubkey = EVP_PKEY_new();
+    EVP_PKEY_assign_RSA(rsa_pubkey, rsa_rawkey);
     
     EVP_PKEY_CTX *en_ctx;
     ENGINE *e = ENGINE_get_default_RSA();
     ENGINE_init(e);
     en_ctx = EVP_PKEY_CTX_new(rsa_pubkey, e);
 
-    EVP_PKEY *rsa_privkey = get_privkey(rsa_rawkey);
+    //EVP_PKEY *rsa_privkey = get_privkey(rsa_rawkey);
 
-    //EVP_PKEY *rsa_privkey = EVP_PKEY_new();
-    //EVP_PKEY_assign_RSA(rsa_privkey, rsa_rawkey);
+    EVP_PKEY *rsa_privkey = EVP_PKEY_new();
+    EVP_PKEY_assign_RSA(rsa_privkey, rsa_rawkey);
     
     EVP_PKEY_CTX *de_ctx;
     ENGINE *f = ENGINE_get_default_RSA();
     ENGINE_init(f);
     de_ctx = EVP_PKEY_CTX_new(rsa_privkey, f);
     
-    unsigned char msg[64];
-    size_t len = 64;
+    unsigned char msg[86];
+    size_t len = 86;
     
     randstr(msg, len, true);
 
@@ -199,3 +217,4 @@ int main(int argc, char **argv)
 
     return 0;
 }
+
