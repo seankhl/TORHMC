@@ -14,6 +14,146 @@
 #include <netinet/in.h>
 #include <netdb.h>
 
+
+#include <iostream>
+#include <cstring>
+#include <string>
+#include <sys/time.h>
+#include <openssl/rsa.h>
+#include <openssl/pem.h>
+#include <openssl/evp.h>
+#include <openssl/engine.h>
+#include <openssl/bn.h>
+
+using namespace std;
+
+int write_pubkey(RSA *key, string filepath)
+{
+    BIO *pubkey_bio = BIO_new_file(filepath.c_str(), "w");
+    BIO_set_mem_eof_return(pubkey_bio, 0);
+    PEM_write_bio_RSAPublicKey(pubkey_bio, key);
+    BIO_free(pubkey_bio);
+    return 1;
+}
+
+EVP_PKEY *read_pubkey(string filepath)
+{
+    RSA *pubkey = RSA_new();
+    BIO *pubkey_bio = BIO_new_file(filepath.c_str(), "r");
+    PEM_read_bio_RSAPublicKey(pubkey_bio, &pubkey, 0, NULL);
+    BIO_free(pubkey_bio);
+    
+    EVP_PKEY *pubkey_evp = EVP_PKEY_new();
+    EVP_PKEY_assign_RSA(pubkey_evp, pubkey);
+    return pubkey_evp;
+}
+
+int write_privkey(RSA *key, string filepath)
+{
+    BIO *privkey_bio = BIO_new_file(filepath.c_str(), "w");
+    BIO_set_mem_eof_return(privkey_bio, 0);
+    PEM_write_bio_RSAPrivateKey(privkey_bio, key, NULL, NULL, 0, 0, NULL);
+    BIO_free(privkey_bio);
+    return 1;
+}
+
+EVP_PKEY *read_privkey(string filepath)
+{
+    RSA *privkey = RSA_new();
+    BIO *privkey_bio = BIO_new_file(filepath.c_str(), "r");
+    PEM_read_bio_RSAPrivateKey(privkey_bio, &privkey, 0, NULL);
+    BIO_free(privkey_bio);
+    
+    EVP_PKEY *privkey_evp = EVP_PKEY_new();
+    EVP_PKEY_assign_RSA(privkey_evp, privkey);
+    return privkey_evp;
+}
+
+unsigned char *rsa_encrypt(EVP_PKEY_CTX *en_ctx,
+                           unsigned char *ptext, size_t &len)
+{
+    // initializie encryption process
+    if (EVP_PKEY_encrypt_init(en_ctx) < 1) {
+        return NULL;
+    }
+
+    // padding initialization
+    if (EVP_PKEY_CTX_set_rsa_padding(en_ctx, RSA_PKCS1_OAEP_PADDING) < 1) {
+        return NULL;
+    }
+
+    // determine output length
+    size_t outlen;
+    if (EVP_PKEY_encrypt(en_ctx, NULL, &outlen, ptext, len) < 1) {
+        return NULL;
+    }
+    
+    // get out buffer
+    unsigned char *ctext = (unsigned char *)OPENSSL_malloc(outlen);
+    if (!ctext) {
+        return NULL;
+    }
+
+    // perform encryption
+    if (EVP_PKEY_encrypt(en_ctx, ctext, &outlen, ptext, len) < 1) {
+        return NULL;
+    }
+
+    len = outlen;
+
+    return ctext;
+}
+
+unsigned char *rsa_decrypt(EVP_PKEY_CTX *de_ctx,
+                           unsigned char *ctext, size_t &len)
+{
+    // initialize encryption process
+    if (EVP_PKEY_decrypt_init(de_ctx) < 1) {
+        return NULL;
+    }
+
+    // padding initialization
+    if (EVP_PKEY_CTX_set_rsa_padding(de_ctx, RSA_PKCS1_OAEP_PADDING) < 1) {
+        return NULL;
+    }
+
+    // determine output length
+    size_t outlen;
+    if (EVP_PKEY_decrypt(de_ctx, NULL, &outlen, ctext, len) < 1) {
+        return NULL;
+    }
+
+    // get out buffer
+    unsigned char *ptext = (unsigned char *)OPENSSL_malloc(outlen);
+    if (!ptext) {
+        return NULL;
+    }
+
+    // perform decryption
+    if (EVP_PKEY_decrypt(de_ctx, ptext, &outlen, ctext, len) < 1) {
+        return NULL;
+    }
+
+    len = outlen;
+
+    return ptext;
+}
+
+unsigned char *randstr(unsigned char *str, int len, bool newseed)
+{
+    if (newseed) {
+        timeval seed;
+        gettimeofday(&seed, NULL);
+        srand(seed.tv_usec * seed.tv_sec);
+    }
+    for (int i = 0; i < len; ++i) {
+        str[i] = 'a' + (rand() % 26);
+    }
+    return str;
+}
+
+////////////////////////////////////////////////////////////////
+
 void error(const char *msg)
 {
     perror(msg);
@@ -46,7 +186,10 @@ int main(int argc, char *argv[])
     struct sockaddr_in serv_addr;
     struct hostent *server;
 
-    char buffer[256];
+    int bufferSize = 512;
+    int numNodes = 2;
+    int layerSize = 128;
+    char buffer[bufferSize];
     if (argc < 3) {
        fprintf(stderr,"usage: %s hostname port\n", argv[0]);
        exit(0);
@@ -69,45 +212,60 @@ int main(int argc, char *argv[])
     if (connect(sockfd,(struct sockaddr *) &serv_addr,sizeof(serv_addr)) < 0) 
         error("ERROR connecting");
 
-    bzero(buffer,256);
-
-    int numNodes = 2;
-    int layerSize = sizeof(int)+sizeof(short);
+    bzero(buffer,bufferSize);
 
     printf("Randomly selecting path...");
-    char* ips[2]   = {"127.0.0.1", "127.0.0.1"};
-    short ports[2] = {51716,51718};
+    char* ips[2]       = {"127.0.0.1", "127.0.0.1"};
+    string keypaths[2] = {"keys/pubkey2.pem","keys/pubkey2.pem"};
+    short ports[2]     = {51716,51718};
     printf("DONE!\n");
 
     printf("Creating onion...");
 
     int i=0;
-    for(i=0; i < numNodes; i++)
+    for(i=numNodes - 1; i >= 0; i--)
     {
+        unsigned char layer[layerSize];
+        bzero(layer, layerSize);
+
         int ipint = ipToInt(ips[i]);
         short portshort = ports[i];
-        memcpy(buffer + i*layerSize, (char *) &ipint, sizeof(int));
-        memcpy(buffer + i*layerSize + sizeof(int), (char *) &portshort, sizeof(short));
+
+        memcpy(layer, (char *) &ipint, sizeof(int));
+        memcpy(layer + sizeof(int), (char *) &portshort, sizeof(short));
+
+        EVP_PKEY* pub = read_pubkey(keypaths[i]);
+        EVP_PKEY_CTX *en_ctx;
+        ENGINE *e = ENGINE_get_default_RSA();
+        ENGINE_init(e);
+        en_ctx = EVP_PKEY_CTX_new(pub, e);
+        size_t len = 86;
+        unsigned char * ctext = rsa_encrypt(en_ctx, layer, len);
+        if(len == layerSize)
+            memcpy(buffer + i*layerSize, ctext, layerSize);
+        else
+            printf("everything is fucked!: %d\n", len);
     }
     printf("DONE!\nEstablishing symmetric encryption through the path...");
 
-    n = write(sockfd,buffer,256);
+    printf("message: %s\n\n", buffer);
+    n = write(sockfd,buffer,bufferSize);
     if (n < 0) 
          error("ERROR writing to socket");
 
-    bzero(buffer, 256);
-    n = read(sockfd,buffer,256);
+    bzero(buffer, bufferSize);
+    n = read(sockfd,buffer,bufferSize);
     printf("DONE!\nResponse from exit node: %s\nAnonymous network connection established. ", buffer);
 
     while (1) {
         printf("Who do you want to ping? ");
-        bzero(buffer,256);
+        bzero(buffer,bufferSize);
         fgets(buffer,255,stdin);
         n = write(sockfd,buffer,strlen(buffer));
         if (n < 0) 
              error("ERROR writing to socket");
-        bzero(buffer,256);
-        n = read(sockfd,buffer,255);
+        bzero(buffer,bufferSize);
+        n = read(sockfd,buffer,bufferSize); // used to be 255
         if (n < 0) error("ERROR reading from socket");
         printf("Response from server: %s\n", buffer);
     }

@@ -14,6 +14,145 @@
 #include <netinet/in.h>
 #include <netdb.h>
 
+#include <iostream>
+#include <cstring>
+#include <string>
+#include <sys/time.h>
+#include <openssl/rsa.h>
+#include <openssl/pem.h>
+#include <openssl/evp.h>
+#include <openssl/engine.h>
+#include <openssl/bn.h>
+
+using namespace std;
+
+int write_pubkey(RSA *key, string filepath)
+{
+    BIO *pubkey_bio = BIO_new_file(filepath.c_str(), "w");
+    BIO_set_mem_eof_return(pubkey_bio, 0);
+    PEM_write_bio_RSAPublicKey(pubkey_bio, key);
+    BIO_free(pubkey_bio);
+    return 1;
+}
+
+EVP_PKEY *read_pubkey(string filepath)
+{
+    RSA *pubkey = RSA_new();
+    BIO *pubkey_bio = BIO_new_file(filepath.c_str(), "r");
+    PEM_read_bio_RSAPublicKey(pubkey_bio, &pubkey, 0, NULL);
+    BIO_free(pubkey_bio);
+    
+    EVP_PKEY *pubkey_evp = EVP_PKEY_new();
+    EVP_PKEY_assign_RSA(pubkey_evp, pubkey);
+    return pubkey_evp;
+}
+
+int write_privkey(RSA *key, string filepath)
+{
+    BIO *privkey_bio = BIO_new_file(filepath.c_str(), "w");
+    BIO_set_mem_eof_return(privkey_bio, 0);
+    PEM_write_bio_RSAPrivateKey(privkey_bio, key, NULL, NULL, 0, 0, NULL);
+    BIO_free(privkey_bio);
+    return 1;
+}
+
+EVP_PKEY *read_privkey(string filepath)
+{
+    RSA *privkey = RSA_new();
+    BIO *privkey_bio = BIO_new_file(filepath.c_str(), "r");
+    PEM_read_bio_RSAPrivateKey(privkey_bio, &privkey, 0, NULL);
+    BIO_free(privkey_bio);
+    
+    EVP_PKEY *privkey_evp = EVP_PKEY_new();
+    EVP_PKEY_assign_RSA(privkey_evp, privkey);
+    return privkey_evp;
+}
+
+unsigned char *rsa_encrypt(EVP_PKEY_CTX *en_ctx,
+                           unsigned char *ptext, size_t &len)
+{
+    // initializie encryption process
+    if (EVP_PKEY_encrypt_init(en_ctx) < 1) {
+        return NULL;
+    }
+
+    // padding initialization
+    if (EVP_PKEY_CTX_set_rsa_padding(en_ctx, RSA_PKCS1_OAEP_PADDING) < 1) {
+        return NULL;
+    }
+
+    // determine output length
+    size_t outlen;
+    if (EVP_PKEY_encrypt(en_ctx, NULL, &outlen, ptext, len) < 1) {
+        return NULL;
+    }
+    
+    // get out buffer
+    unsigned char *ctext = (unsigned char *)OPENSSL_malloc(outlen);
+    if (!ctext) {
+        return NULL;
+    }
+
+    // perform encryption
+    if (EVP_PKEY_encrypt(en_ctx, ctext, &outlen, ptext, len) < 1) {
+        return NULL;
+    }
+
+    len = outlen;
+
+    return ctext;
+}
+
+unsigned char *rsa_decrypt(EVP_PKEY_CTX *de_ctx,
+                           unsigned char *ctext, size_t &len)
+{
+    // initialize encryption process
+    if (EVP_PKEY_decrypt_init(de_ctx) < 1) {
+        return NULL;
+    }
+
+    // padding initialization
+    if (EVP_PKEY_CTX_set_rsa_padding(de_ctx, RSA_PKCS1_OAEP_PADDING) < 1) {
+        return NULL;
+    }
+
+    // determine output length
+    size_t outlen;
+    if (EVP_PKEY_decrypt(de_ctx, NULL, &outlen, ctext, len) < 1) {
+        return NULL;
+    }
+
+    // get out buffer
+    unsigned char *ptext = (unsigned char *)OPENSSL_malloc(outlen);
+    if (!ptext) {
+        return NULL;
+    }
+
+    // perform decryption
+    if (EVP_PKEY_decrypt(de_ctx, ptext, &outlen, ctext, len) < 1) {
+        return NULL;
+    }
+
+    len = outlen;
+
+    return ptext;
+}
+
+unsigned char *randstr(unsigned char *str, int len, bool newseed)
+{
+    if (newseed) {
+        timeval seed;
+        gettimeofday(&seed, NULL);
+        srand(seed.tv_usec * seed.tv_sec);
+    }
+    for (int i = 0; i < len; ++i) {
+        str[i] = 'a' + (rand() % 26);
+    }
+    return str;
+}
+
+////////////////////////////////////////////////////////////////
+
 void newpath(int); /* Function to handle new connection through this node */
 
 void error(const char *msg)
@@ -99,17 +238,30 @@ void newpath (int prev)
 {
     int n, next;
     unsigned short portno = 0;
-    int bufferSize = 256;
+    int bufferSize = 512;
+    int layerSize = 128;
     char buffer[bufferSize];
-    int layerSize = sizeof(int) + sizeof(short);
     struct sockaddr_in serv_addr;
     struct hostent *server;
     
-    bzero(buffer,256);
-    n = read(prev,buffer,256);
+    bzero(buffer,bufferSize);
+    n = read(prev,buffer,bufferSize);
     if (n < 0) error("ERROR reading from socket");
 
-    // private_decrypt(&buffer);
+    // Read in our layer
+    unsigned char layer[layerSize];
+    bzero(layer, layerSize);
+    memcpy(layer, buffer, layerSize);
+
+    // Now decrypt our layer with our private key
+    EVP_PKEY *priv = read_privkey("privkey.pem");
+    EVP_PKEY_CTX *de_ctx;
+    ENGINE *f = ENGINE_get_default_RSA();
+    ENGINE_init(f);
+    de_ctx = EVP_PKEY_CTX_new(priv, f);
+
+    size_t len = layerSize;
+    unsigned char *ptext = rsa_decrypt(de_ctx, layer, len);
 
     next = socket(AF_INET, SOCK_STREAM, 0);
     if (next < 0) 
@@ -119,7 +271,7 @@ void newpath (int prev)
     serv_addr.sin_family = AF_INET;
 
     int ipint;
-    memcpy((char *) &ipint, buffer, 4);
+    memcpy((char *) &ipint, ptext, 4);
     char * ip = intToIp(ipint);
 
     server = gethostbyname(ip);
@@ -127,17 +279,18 @@ void newpath (int prev)
          (char *)&serv_addr.sin_addr.s_addr,
          server->h_length);
 
-    memcpy((char *) &portno, buffer + 4, 2);
+    memcpy((char *) &portno, ptext + 4, 2);
     printf("port: %d\n", portno);
     serv_addr.sin_port = htons(portno);
 
     if (connect(next,(struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0) 
         error("ERROR connecting");
 
+    // Shift off user layer
     memmove(buffer, buffer + layerSize, bufferSize - layerSize);
 
     // Pass on buffer to next to continue symmetric key setup
-    n = write(next,buffer,256);
+    n = write(next,buffer,bufferSize);
     if (n < 0) 
         error("ERROR writing to socket");
 
@@ -149,20 +302,20 @@ void newpath (int prev)
     while (1) {
 	if (pid == 0)  {
             // Get response from next
-            bzero(buffer,256);
-            n = read(next,buffer,255);
+            bzero(buffer,bufferSize);
+            n = read(next,buffer,bufferSize); //used to be 255
             if (n < 0) 
                 error("ERROR reading from socket");
             printf("Node received from next: %s\n",buffer);
 
             // Relay to prev
-            n = write(prev,buffer,255);
+            n = write(prev,buffer,bufferSize); // used to be 255
             if (n < 0) error("ERROR writing to socket");
         }
 	else {
             // Get response from prev
-            bzero(buffer,256);
-            n = read(prev,buffer,255);
+            bzero(buffer,bufferSize);
+            n = read(prev,buffer,bufferSize); // used to be 255
             if (n < 0) 
                 error("ERROR reading from socket");
             printf("Relaying ping request for: %s\n",buffer);
