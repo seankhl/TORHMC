@@ -24,8 +24,108 @@
 #include <openssl/evp.h>
 #include <openssl/engine.h>
 #include <openssl/bn.h>
+#include <openssl/rand.h>
 
 using namespace std;
+
+/////////////////////////////////////////////////////////////////
+/* AES functions                                               */
+/////////////////////////////////////////////////////////////////
+
+#define AES_BLOCK_SIZE 128
+
+struct aes_data {
+    unsigned char aes_key[32];
+    unsigned char aes_iv[32];
+};
+
+aes_data aes_create()
+{
+    // generate a random 32-byte password
+    unsigned char password[32];
+    RAND_bytes(password, 32);
+    
+    // we pass data via an aes_data struct
+    aes_data data;
+    
+    int z = EVP_BytesToKey(
+                EVP_aes_256_cbc(), EVP_sha1(),  // 256-bit cbc; sha1 
+                NULL,                           // salt
+                password, 32,                   // password for generation
+                8,                              // num rounds
+                data.aes_key, data.aes_iv);     // return buffers
+    
+    return data;
+}
+
+int aes_init(EVP_CIPHER_CTX *en_ctx, EVP_CIPHER_CTX *de_ctx, const aes_data &data)
+{
+    // en_ctx stores the encryption key/iv
+    EVP_CIPHER_CTX_init(en_ctx);
+    
+    EVP_EncryptInit_ex(en_ctx, 
+                       EVP_aes_256_cbc(), 
+                       NULL, 
+                       data.aes_key, data.aes_iv);
+
+    // de_ctx stores the decryption key/iv
+    EVP_CIPHER_CTX_init(de_ctx);
+    
+    EVP_DecryptInit_ex(de_ctx, 
+                       EVP_aes_256_cbc(), 
+                       NULL, 
+                       data.aes_key, data.aes_iv);
+                       
+    return 0;
+}
+
+unsigned char *aes_encrypt(EVP_CIPHER_CTX *en_ctx,
+                           unsigned char *ptext, int *len)
+{
+    int outlen = *len + AES_BLOCK_SIZE;
+    int finlen = 0;
+    unsigned char *ctext = (unsigned char *)OPENSSL_malloc(outlen);
+
+    EVP_EncryptUpdate(en_ctx, ctext, &outlen, ptext, *len);
+    EVP_EncryptFinal_ex(en_ctx, ctext+outlen, &finlen);
+
+    *len = outlen + finlen;
+    
+    return ctext;
+}
+
+unsigned char *aes_decrypt(EVP_CIPHER_CTX *de_ctx,
+                           unsigned char *ctext, int *len)
+{
+    int outlen = *len;
+    int finlen = 0;
+  
+    unsigned char *ptext = (unsigned char *)OPENSSL_malloc(outlen);
+
+    EVP_DecryptUpdate(de_ctx, ptext, &outlen, ctext, *len);        
+    EVP_DecryptFinal_ex(de_ctx, ptext+outlen, &finlen);
+  
+    *len = outlen + finlen;
+  
+    return ptext;
+}
+
+unsigned char *randstr(unsigned char *str, int len, bool newseed=false)
+{
+    if (newseed) {
+        timeval seed;
+        gettimeofday(&seed, NULL);
+        srand(seed.tv_usec * seed.tv_sec);
+    }
+    for (int i = 0; i < len; ++i) {
+        str[i] = 'a' + (rand() % 26);
+    }
+    return str;
+}
+
+/////////////////////////////////////////////////////////////////
+/* RSA functions                                               */
+/////////////////////////////////////////////////////////////////
 
 int write_pubkey(RSA *key, string filepath)
 {
@@ -139,20 +239,9 @@ unsigned char *rsa_decrypt(EVP_PKEY_CTX *de_ctx,
     return ptext;
 }
 
-unsigned char *randstr(unsigned char *str, int len, bool newseed)
-{
-    if (newseed) {
-        timeval seed;
-        gettimeofday(&seed, NULL);
-        srand(seed.tv_usec * seed.tv_sec);
-    }
-    for (int i = 0; i < len; ++i) {
-        str[i] = 'a' + (rand() % 26);
-    }
-    return str;
-}
-
-////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////
+/* Client functions                                            */
+/////////////////////////////////////////////////////////////////
 
 void error(const char *msg)
 {
@@ -189,7 +278,7 @@ int main(int argc, char *argv[])
     int bufferSize = 512;
     int numNodes = 2;
     int layerSize = 128;
-    char buffer[bufferSize];
+    unsigned char buffer[bufferSize];
     if (argc < 3) {
        fprintf(stderr,"usage: %s hostname port\n", argv[0]);
        exit(0);
@@ -218,6 +307,19 @@ int main(int argc, char *argv[])
     char* ips[2]       = {"127.0.0.1", "127.0.0.1"};
     string keypaths[2] = {"keys/pubkey2.pem","keys/pubkey2.pem"};
     short ports[2]     = {51716,51718};
+
+    // Set up symmetric keys and encryption/decryption contexts
+    aes_data symmkeys[numNodes];
+    EVP_CIPHER_CTX en_ctx[numNodes];
+    EVP_CIPHER_CTX de_ctx[numNodes];
+    for(size_t j=0; j < numNodes; j++)
+    {
+        symmkeys[j] = aes_create();
+        if (aes_init(&(en_ctx[j]), &(de_ctx[j]), symmkeys[j])) {
+            printf("Couldn't initialize AES System\n");
+            return 1;
+        }
+    }
     printf("DONE!\n");
 
     printf("Creating onion...");
@@ -233,6 +335,7 @@ int main(int argc, char *argv[])
 
         memcpy(layer, (char *) &ipint, sizeof(int));
         memcpy(layer + sizeof(int), (char *) &portshort, sizeof(short));
+        memcpy(layer + sizeof(int) + sizeof(short), (char *) &symmkeys[i], sizeof(aes_data));
 
         EVP_PKEY* pub = read_pubkey(keypaths[i]);
         EVP_PKEY_CTX *en_ctx;
@@ -260,12 +363,12 @@ int main(int argc, char *argv[])
     while (1) {
         printf("Who do you want to ping? ");
         bzero(buffer,bufferSize);
-        fgets(buffer,255,stdin);
-        n = write(sockfd,buffer,strlen(buffer));
+        fgets((char *) buffer,255,stdin);
+        n = write(sockfd,buffer,strlen((char *) buffer));
         if (n < 0) 
              error("ERROR writing to socket");
         bzero(buffer,bufferSize);
-        n = read(sockfd,buffer,bufferSize); // used to be 255
+        n = read(sockfd,buffer,bufferSize);
         if (n < 0) error("ERROR reading from socket");
         printf("Response from server: %s\n", buffer);
     }

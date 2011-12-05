@@ -23,8 +23,109 @@
 #include <openssl/evp.h>
 #include <openssl/engine.h>
 #include <openssl/bn.h>
+#include <openssl/rand.h>
 
 using namespace std;
+
+
+/////////////////////////////////////////////////////////////////
+/* AES functions                                               */
+/////////////////////////////////////////////////////////////////
+
+#define AES_BLOCK_SIZE 128
+
+struct aes_data {
+    unsigned char aes_key[32];
+    unsigned char aes_iv[32];
+};
+
+aes_data aes_create()
+{
+    // generate a random 32-byte password
+    unsigned char password[32];
+    RAND_bytes(password, 32);
+    
+    // we pass data via an aes_data struct
+    aes_data data;
+    
+    int z = EVP_BytesToKey(
+                EVP_aes_256_cbc(), EVP_sha1(),  // 256-bit cbc; sha1 
+                NULL,                           // salt
+                password, 32,                   // password for generation
+                8,                              // num rounds
+                data.aes_key, data.aes_iv);     // return buffers
+    
+    return data;
+}
+
+int aes_init(EVP_CIPHER_CTX *en_ctx, EVP_CIPHER_CTX *de_ctx, const aes_data &data)
+{
+    // en_ctx stores the encryption key/iv
+    EVP_CIPHER_CTX_init(en_ctx);
+    
+    EVP_EncryptInit_ex(en_ctx, 
+                       EVP_aes_256_cbc(), 
+                       NULL, 
+                       data.aes_key, data.aes_iv);
+
+    // de_ctx stores the decryption key/iv
+    EVP_CIPHER_CTX_init(de_ctx);
+    
+    EVP_DecryptInit_ex(de_ctx, 
+                       EVP_aes_256_cbc(), 
+                       NULL, 
+                       data.aes_key, data.aes_iv);
+                       
+    return 0;
+}
+
+unsigned char *aes_encrypt(EVP_CIPHER_CTX *en_ctx,
+                           unsigned char *ptext, int *len)
+{
+    int outlen = *len + AES_BLOCK_SIZE;
+    int finlen = 0;
+    unsigned char *ctext = (unsigned char *)OPENSSL_malloc(outlen);
+
+    EVP_EncryptUpdate(en_ctx, ctext, &outlen, ptext, *len);
+    EVP_EncryptFinal_ex(en_ctx, ctext+outlen, &finlen);
+
+    *len = outlen + finlen;
+    
+    return ctext;
+}
+
+unsigned char *aes_decrypt(EVP_CIPHER_CTX *de_ctx,
+                           unsigned char *ctext, int *len)
+{
+    int outlen = *len;
+    int finlen = 0;
+  
+    unsigned char *ptext = (unsigned char *)OPENSSL_malloc(outlen);
+
+    EVP_DecryptUpdate(de_ctx, ptext, &outlen, ctext, *len);        
+    EVP_DecryptFinal_ex(de_ctx, ptext+outlen, &finlen);
+  
+    *len = outlen + finlen;
+  
+    return ptext;
+}
+
+unsigned char *randstr(unsigned char *str, int len, bool newseed=false)
+{
+    if (newseed) {
+        timeval seed;
+        gettimeofday(&seed, NULL);
+        srand(seed.tv_usec * seed.tv_sec);
+    }
+    for (int i = 0; i < len; ++i) {
+        str[i] = 'a' + (rand() % 26);
+    }
+    return str;
+}
+
+/////////////////////////////////////////////////////////////////
+/* RSA functions                                               */
+/////////////////////////////////////////////////////////////////
 
 int write_pubkey(RSA *key, string filepath)
 {
@@ -138,20 +239,9 @@ unsigned char *rsa_decrypt(EVP_PKEY_CTX *de_ctx,
     return ptext;
 }
 
-unsigned char *randstr(unsigned char *str, int len, bool newseed)
-{
-    if (newseed) {
-        timeval seed;
-        gettimeofday(&seed, NULL);
-        srand(seed.tv_usec * seed.tv_sec);
-    }
-    for (int i = 0; i < len; ++i) {
-        str[i] = 'a' + (rand() % 26);
-    }
-    return str;
-}
-
-////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////
+/* Node functions                                              */
+/////////////////////////////////////////////////////////////////
 
 void newpath(int); /* Function to handle new connection through this node */
 
@@ -240,7 +330,7 @@ void newpath (int prev)
     unsigned short portno = 0;
     int bufferSize = 512;
     int layerSize = 128;
-    char buffer[bufferSize];
+    unsigned char buffer[bufferSize];
     struct sockaddr_in serv_addr;
     struct hostent *server;
     
@@ -270,23 +360,35 @@ void newpath (int prev)
     bzero((char *) &serv_addr, sizeof(serv_addr));
     serv_addr.sin_family = AF_INET;
 
+    // Extract our IP for the next node connection
     int ipint;
     memcpy((char *) &ipint, ptext, 4);
     char * ip = intToIp(ipint);
-
     server = gethostbyname(ip);
     bcopy((char *)server->h_addr, 
          (char *)&serv_addr.sin_addr.s_addr,
          server->h_length);
 
+    // Extract our port for next node connection
     memcpy((char *) &portno, ptext + 4, 2);
     printf("port: %d\n", portno);
     serv_addr.sin_port = htons(portno);
 
+    // Extract our AES symmetric encryption struct
+    aes_data symmkey;
+    bzero((char *) &symmkey, sizeof(aes_data));
+    memcpy((char *) &symmkey, buffer + 6, sizeof(aes_data));
+    EVP_CIPHER_CTX en_sym;
+    EVP_CIPHER_CTX de_sym;
+    if (aes_init(&en_sym, &de_sym, symmkey)) {
+        error("Couldn't initialize AES System\n");
+    }
+
+    // Connect to next node
     if (connect(next,(struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0) 
         error("ERROR connecting");
 
-    // Shift off user layer
+    // Shift off used layer to relay rest of onion
     memmove(buffer, buffer + layerSize, bufferSize - layerSize);
 
     // Pass on buffer to next to continue symmetric key setup
@@ -299,29 +401,33 @@ void newpath (int prev)
     if (pid < 0)
          error("ERROR on fork");
 
+    // Now that symmetric keys have been established, we simply listen on
+    // both ends of the connection and encrypt or decrypt and relay as
+    // appropriate
     while (1) {
 	if (pid == 0)  {
             // Get response from next
             bzero(buffer,bufferSize);
-            n = read(next,buffer,bufferSize); //used to be 255
+            n = read(next,buffer,bufferSize);
             if (n < 0) 
                 error("ERROR reading from socket");
             printf("Node received from next: %s\n",buffer);
 
             // Relay to prev
-            n = write(prev,buffer,bufferSize); // used to be 255
+            n = write(prev,buffer,bufferSize);
             if (n < 0) error("ERROR writing to socket");
         }
 	else {
             // Get response from prev
             bzero(buffer,bufferSize);
-            n = read(prev,buffer,bufferSize); // used to be 255
+            n = read(prev,buffer,bufferSize);
+            
             if (n < 0) 
                 error("ERROR reading from socket");
             printf("Relaying ping request for: %s\n",buffer);
 
             // Relay to next
-            n = write(next,buffer,strlen(buffer));
+            n = write(next,buffer,strlen((char *) buffer));
             if (n < 0) error("ERROR writing to socket");
         }
     }
