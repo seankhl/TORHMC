@@ -1,2 +1,4 @@
 Chris Beavers and Sean Laguna
 TORHMC - a TOR implementation for cs181a
+
+g++ rsa.c -g -I/usr/local/ssl/include -L/usr/local/ssl/lib -ldl -lcrypto -o test
