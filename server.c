@@ -89,8 +89,6 @@ int main(int argc, char *argv[])
  *****************************************/
 void dostuff(int sock)
 {
-    printf("doing shit\n");
-
     // get buffer and whatnot
     int bufferSize = 512;
     unsigned char buffer[bufferSize];
@@ -99,8 +97,6 @@ void dostuff(int sock)
     // read in the data
     int n = 0;
     n = read(sock, buffer, bufferSize);
-
-    printf("I got this shit, nigga: %d", n);
     
     // write back a verification message
     if (n < 0) {
@@ -127,9 +123,11 @@ void dostuff(int sock)
         
         // print to the command using the ping syntax and the site specified
         // in the buffer
-        n = sprintf(command, "ping -c 1 %s", buffer);
+        n = sprintf(command, "ping -c 1 %s", (char *) buffer);
         
         // give the command
+        printf("command of %d bytes: %s\n", strlen(command), command);
+        printf("buffer: %s\n", buffer);
         system(command);
         
         // send a reply about the command

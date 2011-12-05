@@ -402,7 +402,7 @@ int main(int argc, char *argv[])
     // get a response
     n = read(sockfd, buffer, bufferSize);
 
-    printf("DONE!\nResponse from exit node: %s\nAnonymous network connection established. ", buffer);
+    printf("DONE!\nGot response from exit node.\nAnonymous network connection established. ", buffer);
 
     // infinite loop for pinging sites
     while (1) {
@@ -419,12 +419,19 @@ int main(int argc, char *argv[])
         int len = strlen((char *)message);
         for (i = numNodes - 1; i >= 0; i--) {
             // encrypt message
-            printf("About to encrypt %d bytes: %s\n", len, (char *)message);
+            EVP_CIPHER_CTX_init(&(en_sym[i]));
+    
+            EVP_EncryptInit_ex(&(en_sym[i]), 
+                       EVP_aes_256_cbc(), 
+                       NULL, 
+                       symkeys[i].aes_key, symkeys[i].aes_iv);
+
             unsigned char *ctext = aes_encrypt(&(en_sym[i]), message, &len);
             
             // copy message from ctext back to message so we can keep going
             memcpy(message, ctext, len);
-            printf("message size: %d...%s\n", len, (char *)message);
+
+            EVP_CIPHER_CTX_cleanup(&(en_sym[i]));
         }
 
         // relay down the path
@@ -443,8 +450,29 @@ int main(int argc, char *argv[])
         }
         
         // decrypt buffer with symmetric keys in reverse order
+        len = n;
+        unsigned char *ptext;
+        for (i = 0; i < numNodes; i++) {
+            // encrypt message
+            EVP_CIPHER_CTX_init(&(de_sym[i]));
+    
+            EVP_DecryptInit_ex(&(de_sym[i]), 
+                       EVP_aes_256_cbc(), 
+                       NULL, 
+                       symkeys[i].aes_key, symkeys[i].aes_iv);
+
+            ptext = aes_decrypt(&(de_sym[i]), message, &len);
+            memcpy(message, ptext, len);
+            
+            // copy message from ctext back to message so we can keep going
+
+            EVP_CIPHER_CTX_cleanup(&(de_sym[i]));
+        }
+        char serverResponse[len];
+        bzero(serverResponse, len);
+        memcpy(serverResponse, (char*) ptext, len - 1);
         
-        printf("Response from server: %s\n", (char *)message);
+        printf("Response of %d bytes from server: %s\n", len, serverResponse);
     }
     
     // done, close socket

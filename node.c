@@ -435,14 +435,15 @@ void newpath(int prev)
     
     // now that symmetric keys have been established, we simply listen on both
     // ends of the connection and encrypt or decrypt and relay as appropriate
-    unsigned char message[bufferSize];
     while (1) {
         // coming back from server
         if (pid == 0)  {
+            int m = 0;
+            unsigned char message[bufferSize];
             // get response from next
             bzero(message, bufferSize);
-            n = read(next, message, bufferSize);
-            if (n < 0) {
+            m = read(next, message, bufferSize);
+            if (m < 0) {
                 error("ERROR reading from socket");
             }
             
@@ -450,30 +451,49 @@ void newpath(int prev)
 
             // encrypt buffer
             //unsigned char *ctext = aes_encrypt(&en_sym, message, &n);
+            EVP_CIPHER_CTX_init(&en_sym);
+    
+            EVP_EncryptInit_ex(&en_sym, 
+                       EVP_aes_256_cbc(), 
+                       NULL, 
+                       symkey.aes_key, symkey.aes_iv);
+            printf("About to encrypt %d bytes: %s\n", m, message);
+            unsigned char *ctext = aes_encrypt(&en_sym, message, &m);
+            printf("Relaying ping request of %d bytes: %s\n", m, (char *)ctext);
+            EVP_CIPHER_CTX_cleanup(&en_sym);
 
             // relay to prev
-            n = write(prev, message, bufferSize);
-            if (n < 0) {
+            m = write(prev, ctext, m);
+            if (m < 0) {
                 error("ERROR writing to socket");
             }
         }
         // going towards server
         else {
+            int m = 0;
             // get response from prev
+            unsigned char message[bufferSize];
             bzero(message, bufferSize);
-            n = read(prev, message, bufferSize);
-            if (n < 0) {
+            m = read(prev, message, bufferSize);
+            if (m < 0) {
                 error("ERROR reading from socket");
             }
             
             // decrypt buffer
+            EVP_CIPHER_CTX_init(&de_sym);
+    
+            EVP_DecryptInit_ex(&de_sym, 
+                       EVP_aes_256_cbc(), 
+                       NULL, 
+                       symkey.aes_key, symkey.aes_iv);
             printf("About to decrypt %d bytes: %s\n", n, message);
-            unsigned char *ptext = aes_decrypt(&de_sym, message, &n);
-            printf("Relaying ping request of %d bytes: %s\n", n, (char *)ptext);
+            unsigned char *ptext = aes_decrypt(&de_sym, message, &m);
+            printf("Relaying ping request of %d bytes: %s\n", m, (char *)ptext);
+            EVP_CIPHER_CTX_cleanup(&de_sym);
 
             // relay to next
-            n = write(next, ptext, n);
-            if (n < 0) {
+            m = write(next, ptext, m);
+            if (m < 0) {
                 error("ERROR writing to socket");
             }
         }
