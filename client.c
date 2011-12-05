@@ -389,7 +389,6 @@ int main(int argc, char *argv[])
     }
     
     printf("DONE!\nEstablishing symmetric encryption through the path...");
-    printf("message: %s\n\n", (char *)buffer);
     
     // write out the buffer to the next node so it can get its stuff
     n = write(sockfd, buffer, bufferSize);

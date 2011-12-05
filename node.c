@@ -341,7 +341,7 @@ void newpath(int prev)
 {
     // some vars
     int n, next, pid;
-    short portno = 0;
+    unsigned short portno = 0;
     struct sockaddr_in serv_addr;
     struct hostent *server;
     
@@ -404,7 +404,7 @@ void newpath(int prev)
     bzero((char *)&symkey, sizeof(aes_data));
     memcpy((char *)&symkey, ptext + sizeof(int) + sizeof(short), sizeof(aes_data));
     
-    printf("\n%s\n", (char *)symkey.aes_key);
+    printf("Got my symmetric key: %s\n", (char *)symkey.aes_key);
     
     // create encryption and decryption contexts
     EVP_CIPHER_CTX en_sym;
@@ -438,7 +438,7 @@ void newpath(int prev)
     unsigned char message[bufferSize];
     while (1) {
         // coming back from server
-	    if (pid == 0)  {
+        if (pid == 0)  {
             // get response from next
             bzero(message, bufferSize);
             n = read(next, message, bufferSize);
@@ -452,13 +452,13 @@ void newpath(int prev)
             //unsigned char *ctext = aes_encrypt(&en_sym, message, &n);
 
             // relay to prev
-            //n = write(prev, ctext, bufferSize);
+            n = write(prev, message, bufferSize);
             if (n < 0) {
                 error("ERROR writing to socket");
             }
         }
         // going towards server
-	    else {
+        else {
             // get response from prev
             bzero(message, bufferSize);
             n = read(prev, message, bufferSize);
