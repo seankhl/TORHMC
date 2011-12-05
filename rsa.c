@@ -2,19 +2,19 @@
 
 using namespace std;
 
-int write_pubkey(RSA *key, string filepath)
+int write_pubkey(RSA *key, char *filepath)
 {
-    BIO *pubkey_bio = BIO_new_file(filepath.c_str(), "w");
+    BIO *pubkey_bio = BIO_new_file(filepath, "w");
     BIO_set_mem_eof_return(pubkey_bio, 0);
     PEM_write_bio_RSAPublicKey(pubkey_bio, key);
     BIO_free(pubkey_bio);
     return 1;
 }
 
-EVP_PKEY *read_pubkey(string filepath)
+EVP_PKEY *read_pubkey(char *filepath)
 {
     RSA *pubkey = RSA_new();
-    BIO *pubkey_bio = BIO_new_file(filepath.c_str(), "r");
+    BIO *pubkey_bio = BIO_new_file(filepath, "r");
     PEM_read_bio_RSAPublicKey(pubkey_bio, &pubkey, 0, NULL);
     BIO_free(pubkey_bio);
     
@@ -23,19 +23,19 @@ EVP_PKEY *read_pubkey(string filepath)
     return pubkey_evp;
 }
 
-int write_privkey(RSA *key, string filepath)
+int write_privkey(RSA *key, char *filepath)
 {
-    BIO *privkey_bio = BIO_new_file(filepath.c_str(), "w");
+    BIO *privkey_bio = BIO_new_file(filepath, "w");
     BIO_set_mem_eof_return(privkey_bio, 0);
     PEM_write_bio_RSAPrivateKey(privkey_bio, key, NULL, NULL, 0, 0, NULL);
     BIO_free(privkey_bio);
     return 1;
 }
 
-EVP_PKEY *read_privkey(string filepath)
+EVP_PKEY *read_privkey(char *filepath)
 {
     RSA *privkey = RSA_new();
-    BIO *privkey_bio = BIO_new_file(filepath.c_str(), "r");
+    BIO *privkey_bio = BIO_new_file(filepath, "r");
     PEM_read_bio_RSAPrivateKey(privkey_bio, &privkey, 0, NULL);
     BIO_free(privkey_bio);
     

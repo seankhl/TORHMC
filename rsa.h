@@ -14,11 +14,11 @@
 
 using namespace std;
 
-int write_pubkey(RSA *key, string filepath);
-EVP_PKEY *read_pubkey(string filepath);
+int write_pubkey(RSA *key, char *filepath);
+EVP_PKEY *read_pubkey(char *filepath);
 
-int write_privkey(RSA *key, string filepath);
-EVP_PKEY *read_privkey(string filepath);
+int write_privkey(RSA *key, char *filepath);
+EVP_PKEY *read_privkey(char *filepath);
 
 unsigned char *rsa_encrypt(EVP_PKEY_CTX *en_ctx,
                            unsigned char *ptext, size_t &len);
