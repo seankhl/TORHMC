@@ -140,8 +140,8 @@ int main(int argc, char **argv)
         rsa_rawkey = RSA_generate_key(1024, RSA_F4, NULL, NULL);
         check_key = RSA_check_key(rsa_rawkey);
     }
-    write_pubkey(rsa_rawkey, "keys/pubkey1.pem");
-    write_privkey(rsa_rawkey, "keys/privkey1.pem");
+    write_pubkey(rsa_rawkey, "pubkey1.pem");
+    write_privkey(rsa_rawkey, "privkey1.pem");
     
     RSA *rsa_rawkey2;
     rsa_rawkey2 = RSA_generate_key(1024, RSA_F4, NULL, NULL);
@@ -150,8 +150,8 @@ int main(int argc, char **argv)
         rsa_rawkey2 = RSA_generate_key(1024, RSA_F4, NULL, NULL);
         check_key2 = RSA_check_key(rsa_rawkey2);
     }
-    write_pubkey(rsa_rawkey2, "keys/pubkey2.pem");
-    write_privkey(rsa_rawkey2, "keys/privkey2.pem");
+    write_pubkey(rsa_rawkey2, "pubkey2.pem");
+    write_privkey(rsa_rawkey2, "privkey2.pem");
 }
 /*
 int main(int argc, char **argv)

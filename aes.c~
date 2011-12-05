@@ -21,7 +21,7 @@ aes_data aes_create()
     return data;
 }
 
-int aes_init(EVP_CIPHER_CTX *en_ctx, EVP_CIPHER_CTX *de_ctx, const aes_data &data)
+int aes_init(EVP_CIPHER_CTX *en_ctx, EVP_CIPHER_CTX *de_ctx, aes_data &data)
 {
     // en_ctx stores the encryption key/iv
     EVP_CIPHER_CTX_init(en_ctx);
