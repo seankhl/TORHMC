@@ -362,13 +362,30 @@ int main(int argc, char *argv[])
 
     while (1) {
         printf("Who do you want to ping? ");
-        bzero(buffer,bufferSize);
-        fgets((char *) buffer,255,stdin);
-        n = write(sockfd,buffer,strlen((char *) buffer));
+        unsigned char message[bufferSize];
+        bzero((char *) message,bufferSize);
+        fgets((char *) message,255,stdin);
+
+        // Encrypt buffer with symmetric keys - NOTE: adds ~16 bytes per layer
+        int len = strlen((char *) message);
+        for(i=numNodes - 1; i >= 0; i--)
+        {
+            printf("About to encrypt %d bytes: %s\n", len, (char *) message);
+            unsigned char * ctext = aes_encrypt(&(en_ctx[i]), message, &len);
+            memcpy(message, ctext, len);
+            printf("message size: %d...%s\n", len, (char *) message);
+        }
+
+        // Relay down the path
+        n = write(sockfd,message,len);
         if (n < 0) 
              error("ERROR writing to socket");
         bzero(buffer,bufferSize);
+
+        // Wait for response
         n = read(sockfd,buffer,bufferSize);
+
+        // Decrypt buffer with symmetric keys in reverse order
         if (n < 0) error("ERROR reading from socket");
         printf("Response from server: %s\n", buffer);
     }

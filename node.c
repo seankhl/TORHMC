@@ -405,7 +405,8 @@ void newpath (int prev)
     // both ends of the connection and encrypt or decrypt and relay as
     // appropriate
     while (1) {
-	if (pid == 0)  {
+        int len = bufferSize;
+	if (pid == 0)  { // Coming back from server
             // Get response from next
             bzero(buffer,bufferSize);
             n = read(next,buffer,bufferSize);
@@ -413,21 +414,29 @@ void newpath (int prev)
                 error("ERROR reading from socket");
             printf("Node received from next: %s\n",buffer);
 
+            // Encrypt buffer
+            //unsigned char *ctext = aes_encrypt(&en_sym, buffer, &len);
+
             // Relay to prev
             n = write(prev,buffer,bufferSize);
             if (n < 0) error("ERROR writing to socket");
         }
-	else {
+	else { // Going towards server
             // Get response from prev
-            bzero(buffer,bufferSize);
-            n = read(prev,buffer,bufferSize);
-            
+            unsigned char msg[bufferSize];
+            bzero((char*) msg,bufferSize);
+            n = read(prev,msg,bufferSize);
+
             if (n < 0) 
                 error("ERROR reading from socket");
-            printf("Relaying ping request for: %s\n",buffer);
+
+            // Decrypt buffer
+            printf("About to decrypt %d bytes: %s\n", n, msg);
+            unsigned char *ptext = aes_decrypt(&de_sym, msg, &n);
+            printf("Relaying ping request of %d bytes: %s\n",n, (char *) ptext);
 
             // Relay to next
-            n = write(next,buffer,strlen((char *) buffer));
+            n = write(next,(char *) ptext,n);
             if (n < 0) error("ERROR writing to socket");
         }
     }
