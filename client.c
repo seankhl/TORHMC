@@ -462,17 +462,22 @@ int main(int argc, char *argv[])
                        symkeys[i].aes_key, symkeys[i].aes_iv);
 
             ptext = aes_decrypt(&(de_sym[i]), message, &len);
-            memcpy(message, ptext, len);
             
             // copy message from ctext back to message so we can keep going
+            memcpy(message, ptext, len);
+            
+            printf("decrypted size: %d bytes\n", len);
 
             EVP_CIPHER_CTX_cleanup(&(de_sym[i]));
         }
         char serverResponse[len];
         bzero(serverResponse, len);
-        memcpy(serverResponse, (char*) ptext, len - 1);
+        n = sprintf(serverResponse, "%s", (char *)ptext);
+        for (int z = 0; z < len; ++z) {
+            printf("%c ", serverResponse[z]);
+        }
         
-        printf("Response of %d bytes from server: %s\n", len, serverResponse);
+        printf("\nResponse of %d bytes from server: %s\n", strlen(serverResponse), serverResponse);
     }
     
     // done, close socket

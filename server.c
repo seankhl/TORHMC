@@ -113,7 +113,7 @@ void dostuff(int sock)
         
         // get a command string
         char command[bufferSize];
-        bzero(command,bufferSize);
+        bzero(command, bufferSize);
         
         // read the buffer in
         n = read(sock, buffer, bufferSize);
@@ -123,7 +123,7 @@ void dostuff(int sock)
         
         // print to the command using the ping syntax and the site specified
         // in the buffer
-        n = sprintf(command, "ping -c 1 %s", (char *) buffer);
+        n = sprintf(command, "ping -c 1 %s", (char *)buffer);
         
         // give the command
         printf("command of %d bytes: %s\n", strlen(command), command);
@@ -132,10 +132,10 @@ void dostuff(int sock)
         
         // send a reply about the command
         if (n < 0) {
-            write(sock, "Server unavailable.", 19);
+            write(sock, "Server unavailable.\0", 20);
         }
         else {
-            write(sock,"Ping successful.", 16);
+            write(sock, "Ping successful.\0", 17);
         }
     }
 }
