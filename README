@@ -1,4 +1,34 @@
 Chris Beavers and Sean Laguna
-TORHMC - a TOR implementation for cs181a
+TORHMC - a minimalistic testbed TOR implementation for cs181a
 
-g++ rsa.c -g -I/usr/local/ssl/include -L/usr/local/ssl/lib -ldl -lcrypto -o test
+First, download and compile OpenSSL 1.0.0e from openssl.org. The compilation process should be straightforward for Linux machines. The standard process involves running the following commands:
+
+./configure
+make
+make test
+make install
+
+If any of these commands fails, a bit more care must be taken to complete compilation. Please e-mail sean_laguna@hmc.edu with any questions about this process.
+
+The compilation should place a build in /usr/local for including headers and linking to libaries. Our c++ files can be compiled as such:
+
+g++ file.c -g -I/usr/local/ssl/include -L/usr/local/ssl/lib -ldl -lcrypto -o file
+
+The file rsa.c should compile to rsa; running
+
+./rsa filepath 
+
+should write out a public key to filepath_public.pem and private key to filepath_private.pem for use in TorHMC.
+
+The file aes.c should compile to aes; running it verifies the symmetric key generation works properly:
+
+./aes
+
+We include the public and private keys necessary for a single-client, 2-node, 1-server instance of TorHMC that performs pings sent by the client and executed by the server. Running, in this order,
+
+./server 51718
+./node 51716
+./node 51717
+./client localhost 51717
+
+such that the first node has privkey1.pem stored as privkey.pem in its current directory, the second node has privkey2.pem stored as privkey.pem in its current directory, and the server has privkey3.pem stored as privkey.pem in its current directory. The client will generate and distribute the appropriate symmetric keys on the fly. It will ask you to ping sites. The server should perform the pings and send "Ping successful." back to the client, who prints the received message.

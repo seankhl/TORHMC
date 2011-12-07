@@ -127,49 +127,12 @@ unsigned char *randstr(unsigned char *str, int len, bool newseed)
     return str;
 }
 
-int main(int argc, char **argv)
+int keycheck(RSA *rsa_rawkey)
 {
     OpenSSL_add_all_algorithms();
     ENGINE_load_builtin_engines();
     ENGINE_register_all_complete();
 
-    RSA *rsa_rawkey;
-    rsa_rawkey = RSA_generate_key(1024, RSA_F4, NULL, NULL);
-    int check_key = RSA_check_key(rsa_rawkey);
-    while (check_key <= 0) {
-        rsa_rawkey = RSA_generate_key(1024, RSA_F4, NULL, NULL);
-        check_key = RSA_check_key(rsa_rawkey);
-    }
-    write_pubkey(rsa_rawkey, "keys/pubkey1.pem");
-    write_privkey(rsa_rawkey, "keys/privkey1.pem");
-    
-    RSA *rsa_rawkey2;
-    rsa_rawkey2 = RSA_generate_key(1024, RSA_F4, NULL, NULL);
-    int check_key2 = RSA_check_key(rsa_rawkey2);
-    while (check_key2 <= 0) {
-        rsa_rawkey2 = RSA_generate_key(1024, RSA_F4, NULL, NULL);
-        check_key2 = RSA_check_key(rsa_rawkey2);
-    }
-    write_pubkey(rsa_rawkey2, "keys/pubkey2.pem");
-    write_privkey(rsa_rawkey2, "keys/privkey2.pem");
-}
-/*
-int main(int argc, char **argv)
-{
-    OpenSSL_add_all_algorithms();
-    ENGINE_load_builtin_engines();
-    ENGINE_register_all_complete();
-
-    RSA *rsa_rawkey;
-    rsa_rawkey = RSA_generate_key(1024, RSA_F4, NULL, NULL);
-    int check_key = RSA_check_key(rsa_rawkey);
-    while (check_key <= 0) {
-        rsa_rawkey = RSA_generate_key(1024, RSA_F4, NULL, NULL);
-        check_key = RSA_check_key(rsa_rawkey);
-    }
-    
-    //EVP_PKEY *rsa_pubkey = get_pubkey(rsa_rawkey);
-    
     EVP_PKEY *rsa_pubkey = EVP_PKEY_new();
     EVP_PKEY_assign_RSA(rsa_pubkey, rsa_rawkey);
     
@@ -177,8 +140,6 @@ int main(int argc, char **argv)
     ENGINE *e = ENGINE_get_default_RSA();
     ENGINE_init(e);
     en_ctx = EVP_PKEY_CTX_new(rsa_pubkey, e);
-
-    //EVP_PKEY *rsa_privkey = get_privkey(rsa_rawkey);
 
     EVP_PKEY *rsa_privkey = EVP_PKEY_new();
     EVP_PKEY_assign_RSA(rsa_privkey, rsa_rawkey);
@@ -217,4 +178,47 @@ int main(int argc, char **argv)
 
     return 0;
 }
-*/
+
+int main(int argc, char **argv)
+{
+    // args check
+    if (argc < 2) {
+        fprintf(stderr,"ERROR, no filepath provided\n");
+        exit(1);
+    }
+    OpenSSL_add_all_algorithms();
+    ENGINE_load_builtin_engines();
+    ENGINE_register_all_complete();
+
+    RSA *rsa_rawkey;
+    rsa_rawkey = RSA_generate_key(1024, RSA_F4, NULL, NULL);
+    int check_key = RSA_check_key(rsa_rawkey);
+    while (check_key <= 0) {
+        rsa_rawkey = RSA_generate_key(1024, RSA_F4, NULL, NULL);
+        check_key = RSA_check_key(rsa_rawkey);
+    }
+
+    int n = keycheck(rsa_rawkey);
+    if (n == 0) {
+        printf("Keys should be good.\n");
+    }
+    else {
+        printf("Keys are no good. Try again?\n");
+    }
+
+    char filepath_public[strlen(argv[1]) + 16];
+    bzero(filepath_public,strlen(argv[1]) + 16);
+    strcat(filepath_public, "keys/");
+    strcat(filepath_public, argv[1]);
+    strcat(filepath_public, "_public.pem");
+    write_pubkey(rsa_rawkey, filepath_public);
+
+    char filepath_private[strlen(argv[1]) + 17];
+    bzero(filepath_private,strlen(argv[1]) + 17);
+    strcat(filepath_private, "keys/");
+    strcat(filepath_private, argv[1]);
+    strcat(filepath_private, "_private.pem");
+    write_pubkey(rsa_rawkey, filepath_public);
+    write_privkey(rsa_rawkey, filepath_private);
+}
+

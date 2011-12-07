@@ -450,7 +450,6 @@ void newpath(int prev)
             printf("Message received from next: %s\n", message);
 
             // encrypt buffer
-            //unsigned char *ctext = aes_encrypt(&en_sym, message, &n);
             EVP_CIPHER_CTX_init(&en_sym);
     
             EVP_EncryptInit_ex(&en_sym, 
@@ -459,7 +458,7 @@ void newpath(int prev)
                        symkey.aes_key, symkey.aes_iv);
             printf("About to encrypt %d bytes: %s\n", m, message);
             unsigned char *ctext = aes_encrypt(&en_sym, message, &m);
-            printf("Relaying ping request of %d bytes: %s\n", m, (char *)ctext);
+            printf("Relaying request of %d bytes: %s\n", m, (char *)ctext);
             EVP_CIPHER_CTX_cleanup(&en_sym);
 
             // relay to prev
@@ -488,7 +487,7 @@ void newpath(int prev)
                        symkey.aes_key, symkey.aes_iv);
             printf("About to decrypt %d bytes: %s\n", n, message);
             unsigned char *ptext = aes_decrypt(&de_sym, message, &m);
-            printf("Relaying ping request of %d bytes: %s\n", m, (char *)ptext);
+            printf("Relaying request of %d bytes: %s\n", m, (char *)ptext);
             EVP_CIPHER_CTX_cleanup(&de_sym);
 
             // relay to next

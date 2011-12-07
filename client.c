@@ -278,7 +278,7 @@ int main(int argc, char *argv[])
 
     // some consts for us
     const int bufferSize = 512;
-    const int numNodes = 2;
+    const int numNodes = 3;
     const int layerSize = 128;
     
     // args check
@@ -323,9 +323,9 @@ int main(int argc, char *argv[])
     printf("Randomly selecting path...");
     
     // SIMPLFICIATION: path isn't "truly" random
-    char *ips[2]      = {"127.0.0.1", "127.0.0.1"};
-    char *keypaths[2] = {"keys/pubkey2.pem", "keys/pubkey2.pem"};
-    short ports[2]    = {51716, 51718};
+    char *ips[numNodes]      = {"127.0.0.1", "127.0.0.1", "127.0.0.1"};
+    char *keypaths[numNodes] = {"keys/pubkey1.pem", "keys/pubkey2.pem", "keys/pubkey3.pem"};
+    short ports[numNodes]    = {51716, 51718, 44444};
 
     // set up symmetric keys and encryption/decryption contexts
     aes_data symkeys[numNodes];
@@ -345,7 +345,7 @@ int main(int argc, char *argv[])
     printf("Creating onion...");
 
     // go in REVERSE order so we can encrypt naturally
-    for (i = numNodes - 1; i >= 0; i--) {
+    for (i = numNodes-1; i >= 0; i--) {
         // set up the layer
         unsigned char layer[layerSize];
         bzero(layer, layerSize);
@@ -380,7 +380,7 @@ int main(int argc, char *argv[])
             memcpy(buffer + i*layerSize, ctext, layerSize);
         }
         else {
-            printf("everything is fucked!: %d\n", len);
+            printf("Error creating onion: %d\n", len);
             exit(0);
         }
         
@@ -402,7 +402,7 @@ int main(int argc, char *argv[])
     // get a response
     n = read(sockfd, buffer, bufferSize);
 
-    printf("DONE!\nGot response from exit node.\nAnonymous network connection established. ", buffer);
+    printf("DONE!\nGot response from exit node. \nAnonymous network connection established.\n\n");
 
     // infinite loop for pinging sites
     while (1) {
@@ -417,6 +417,7 @@ int main(int argc, char *argv[])
         // encrypt buffer with symmetric keys in FORWARD order
         // NOTE: adds ~16 bytes per layer
         int len = strlen((char *)message);
+        
         for (i = numNodes - 1; i >= 0; i--) {
             // encrypt message
             EVP_CIPHER_CTX_init(&(en_sym[i]));
@@ -473,9 +474,6 @@ int main(int argc, char *argv[])
         char serverResponse[len];
         bzero(serverResponse, len);
         n = sprintf(serverResponse, "%s", (char *)ptext);
-        for (int z = 0; z < len; ++z) {
-            printf("%c ", serverResponse[z]);
-        }
         
         printf("\nResponse of %d bytes from server: %s\n", strlen(serverResponse), serverResponse);
     }

@@ -91,22 +91,29 @@ int main(int argc, char **argv)
     EVP_CIPHER_CTX en_ctx;    
     EVP_CIPHER_CTX de_ctx;
     aes_data data = aes_create();
+    
+    for (int i = 0; i < 2; ++i) {
     if (aes_init(&en_ctx, &de_ctx, data)) {
         printf("Couldn't initialize AES System\n");
         return 1;
     }
-    
-    unsigned char msg[1024];
-    int len = 1024;
+    unsigned char msg[1041];
+    int len = 1025;
     
     randstr(msg, len, true);
+    unsigned char msgorig[1041];
+    memcpy(msgorig, msg, len);
 
-    unsigned char *ctext = aes_encrypt(&en_ctx, msg,   &len);
-    unsigned char *ptext = aes_decrypt(&de_ctx, ctext, &len);
+    unsigned char *ctext = aes_encrypt(&en_ctx, msg, &len);
+    memcpy(msg, ctext, len);
+    cerr << len << endl;
+    
+    unsigned char *ptext = aes_decrypt(&de_ctx, msg, &len);
+    cerr << len << endl;
 
-    string msgstr((char *)msg, len);
+    string msgstr((char *)msgorig, len);
 
-    if (memcmp(msg, ptext, len)) {
+    if (memcmp(msgorig, ptext, len)) {
         printf("FAIL: enc/dec failed for \"%s\"\n", msgstr.c_str());
         return 0;
     }
@@ -116,9 +123,10 @@ int main(int argc, char **argv)
     
     EVP_CIPHER_CTX_cleanup(&en_ctx);
     EVP_CIPHER_CTX_cleanup(&de_ctx);
+    }
     
-    free(ctext);
-    free(ptext);
+    //free(ctext);
+    //free(ptext);
 
     return 0;
 }
